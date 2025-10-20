@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   Loader2,
   Trash2,
-  Plus,
+  Plus, LayoutDashboard
 } from "lucide-react"
 
 const TABS = [
@@ -27,6 +27,7 @@ const TABS = [
   { id: "properties", label: "Properties", icon: Settings },
   { id: "libraries", label: "Libraries", icon: Package },
   { id: "folders", label: "Folders", icon: Folder },
+  { id: "admin-panel", label: "Admin Panel", icon: LayoutDashboard },
   { id: "broadcast", label: "Broadcast", icon: Megaphone },
   { id: "errors", label: "Errors", icon: AlertTriangle },
 ]

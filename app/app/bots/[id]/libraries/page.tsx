@@ -17,12 +17,11 @@ import {
   Search,
   X,
   Book,
-  Trash2,
+  Trash2, LayoutDashboard
 } from "lucide-react"
 import { LibraryCard } from "@/components/library-card"
 import { LibraryReadmeModal } from "@/components/library-readme-modal"
 import { InstalledLibsModal } from "@/components/installed-libs-modal"
-// FIX: Import the reusable modal
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
 
 const TABS = [
@@ -32,6 +31,7 @@ const TABS = [
   { id: "properties", label: "Properties", icon: Settings },
   { id: "libraries", label: "Libraries", icon: Package },
   { id: "folders", label: "Folders", icon: Folder },
+  { id: "admin-panel", label: "Admin Panel", icon: LayoutDashboard },
   { id: "broadcast", label: "Broadcast", icon: Megaphone },
   { id: "errors", label: "Errors", icon: AlertTriangle },
 ]

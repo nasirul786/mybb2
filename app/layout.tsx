@@ -1,7 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Ubuntu } from "next/font/google"
-import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 
@@ -12,9 +11,12 @@ const ubuntu = Ubuntu({
 })
 
 export const metadata: Metadata = {
-  title: "MyBB - Telegram Bot Builder",
+  title: "Bots.Business - Telegram Bot Builder",
   description: "Create and manage Telegram bots with ease",
-    generator: 'v0.app'
+  icons: {
+    icon: "/favicon.ico",
+  },
+  generator: "v0.app",
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -31,7 +33,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           {children}
         </ThemeProvider>
-        <Analytics />
       </body>
     </html>
   )

@@ -12,7 +12,7 @@ export default function Home() {
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
               <Code2 className="w-5 h-5 text-white" />
             </div>
-            <span className="text-xl font-bold">MyBB</span>
+            <span className="text-xl font-bold">Bots.Business</span>
           </div>
           <div className="flex items-center gap-4">
             <Link href="/app">
@@ -148,7 +148,7 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-bold mb-2">Secure & Private</h3>
               <p className="text-muted-foreground">
-                Your data is safe. No backend storage. Everything managed securely by MyBB infrastructure.
+                Your data is safe. No backend storage. Everything managed securely by Bots.Business infrastructure.
               </p>
             </div>
 
@@ -227,8 +227,8 @@ export default function Home() {
           </div>
           <h2 className="text-3xl font-bold mb-4">Built by i am cc</h2>
           <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
-            MyBB is built single-handedly with passion for making bot development accessible to everyone. No corporate
-            backing, no data harvesting. Your privacy and security are paramount.
+            Bots.Business is built single-handedly with passion for making bot development accessible to everyone. No
+            corporate backing, no data harvesting. Your privacy and security are paramount.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <a href="https://t.me/nirjon" target="_blank" rel="noopener noreferrer">
@@ -272,7 +272,7 @@ export default function Home() {
                 <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
                   <Code2 className="w-4 h-4 text-white" />
                 </div>
-                <span className="font-bold">MyBB</span>
+                <span className="font-bold">Bots.Business</span>
               </div>
               <p className="text-sm text-muted-foreground">Build Telegram bots with ease</p>
             </div>
@@ -335,7 +335,7 @@ export default function Home() {
             </div>
           </div>
           <div className="border-t border-border pt-8 flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
-            <p>© 2025 MyBB. Built with ❤️ by i am cc</p>
+            <p>© 2025 Bots.Business</p>
           </div>
         </div>
       </footer>

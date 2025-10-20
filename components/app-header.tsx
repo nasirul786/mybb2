@@ -49,7 +49,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
 
         <div className="ml-2 flex items-center gap-2">
           <Code2 className="w-5 h-5" />
-          <span className="font-semibold">MyBB</span>
+          <span className="font-semibold">Bots.Business</span>
         </div>
 
         <div className="ml-auto flex items-center gap-3">
@@ -85,9 +85,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                     setShowThemePopup(false)
                   }}
                   className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors hover:text-foreground hover:bg-muted cursor-pointer rounded ${
-                    theme === "light"
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground"
+                    theme === "light" ? "bg-muted text-foreground" : "text-muted-foreground"
                   }`}
                 >
                   <Sun className="w-4 h-4" />
@@ -100,9 +98,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                     setShowThemePopup(false)
                   }}
                   className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors hover:text-foreground hover:bg-muted cursor-pointer rounded ${
-                    theme === "dark"
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground"
+                    theme === "dark" ? "bg-muted text-foreground" : "text-muted-foreground"
                   }`}
                 >
                   <Moon className="w-4 h-4" />
@@ -115,9 +111,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                     setShowThemePopup(false)
                   }}
                   className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors hover:text-foreground hover:bg-muted cursor-pointer rounded ${
-                    theme === "system"
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground"
+                    theme === "system" ? "bg-muted text-foreground" : "text-muted-foreground"
                   }`}
                 >
                   <Monitor className="w-4 h-4" />

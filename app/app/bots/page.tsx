@@ -10,10 +10,7 @@ import { CreateBotModal } from "@/components/create-bot-modal"
 import { FilterModal } from "@/components/filter-modal"
 import { Search, Plus, Filter, Loader2, Bot, X } from "lucide-react"
 import useSWR from "swr"
-import dynamic from "next/dynamic"
-
-// Dynamically import Lottie to avoid SSR issues
-const Lottie = dynamic(() => import("lottie-react"), { ssr: false })
+import Lottie from "lottie-react"
 
 interface Bot {
   id: number
@@ -134,7 +131,7 @@ export default function BotsPage() {
   }
 
   const EmptyState = () => (
-    <Card className="p-8 text-center border-muted hover:border-primary/50 transition-colors duration-300 bg-card/50">
+    <Card className="p-4 text-center border-muted hover:border-primary/50 transition-colors duration-300 bg-card/50">
       <CardContent className="flex flex-col items-center justify-center space-y-6 p-6">
         {emptyAnimationData ? (
           <div className="w-64 h-64 mx-auto -mb-8 -mt-4">

@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation"
 import { CommandsList } from "@/components/commands-list"
 import { CommandModal } from "@/components/command-modal"
 import CodeEditor from "@/components/code-editor"
-// FIX: Import the reusable delete modal
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
 import {
   type Command,
@@ -25,8 +24,8 @@ import {
   Folder,
   Megaphone,
   AlertTriangle,
-  Loader2, // Import Loader2 if needed by DeleteConfirmModal
-  Trash2, // Import Trash2 if needed by DeleteConfirmModal
+  Loader2, 
+  Trash2, LayoutDashboard
 } from "lucide-react"
 
 const TABS = [
@@ -36,6 +35,7 @@ const TABS = [
   { id: "properties", label: "Properties", icon: Settings },
   { id: "libraries", label: "Libraries", icon: Package },
   { id: "folders", label: "Folders", icon: Folder },
+  { id: "admin-panel", label: "Admin Panel", icon: LayoutDashboard },
   { id: "broadcast", label: "Broadcast", icon: Megaphone },
   { id: "errors", label: "Errors", icon: AlertTriangle },
 ]

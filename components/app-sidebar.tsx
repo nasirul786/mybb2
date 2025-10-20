@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { LogOut, Settings, Store, Wand2, Code2, X, Bot } from "lucide-react"
+import { LogOut, Settings, Store, Wand2, Code2, X, Bot, Cloud, Zap } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { LogoutConfirmModal } from "./logout-confirm-modal"
@@ -27,6 +27,8 @@ export function AppSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     { href: "/app/bots", label: "Bots", icon: Bot },
     { href: "/app/magic-tool", label: "Magic Tool", icon: Wand2 },
     { href: "/app/store", label: "Store", icon: Store },
+    { href: "/app/cloud", label: "Cloud", icon: Cloud },
+    { href: "/app/iteration", label: "Iteration", icon: Zap },
     { href: "/app/account", label: "Account", icon: Settings },
   ] as const
 
@@ -67,8 +69,8 @@ export function AppSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () =
             <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-lg flex items-center justify-center flex-shrink-0">
               <Code2 className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-lg bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-              MyBB
+            <span className="font-bold text-lg" style={{ color: "#2DA5E1" }}>
+              Bots.Business
             </span>
           </div>
           <button
@@ -110,18 +112,7 @@ export function AppSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () =
             Logout
           </Button>
 
-          <p className="text-xs text-muted-foreground text-center">
-            Made with <span aria-hidden="true">❤️</span> by{" "}
-            <a
-              href="https://t.me/nirjon"
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary hover:opacity-90 focus:outline-none cursor-pointer"
-            >
-              i am cc
-            </a>{" "}
-            | v2.0
-          </p>
+          <p className="text-xs text-muted-foreground text-center">v2.0</p>
         </div>
       </aside>
 
