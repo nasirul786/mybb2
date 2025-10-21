@@ -1,5 +1,4 @@
 "use client"
-
 import { useState, useEffect } from "react"
 import type { ReactNode } from "react"
 import { AppHeader } from "@/components/app-header"
@@ -16,7 +15,6 @@ export default function BotsLayout({ children }: { children: ReactNode }) {
         setSidebarOpen(false)
       }
     }
-
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
@@ -29,11 +27,11 @@ export default function BotsLayout({ children }: { children: ReactNode }) {
   }, [router])
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex min-h-screen bg-background text-foreground">
       <AppSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <AppHeader onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+      <div className="flex flex-col flex-1">
+        <AppHeader onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 p-6 space-y-8">{children}</main>
       </div>
     </div>
   )

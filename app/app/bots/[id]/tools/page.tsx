@@ -97,13 +97,42 @@ async function cloneBot(botId: string, apiKey: string): Promise<{ success: boole
     }
 }
 
+async function triggerGitTask(
+    botId: string,
+    apiKey: string,
+    task: "git_import_tasks" | "git_export_tasks"
+): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+        const url = `${BASE_URL}/bots/${botId}/${task}?api_key=${apiKey}`;
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}), // Send empty JSON body
+        });
+
+        const responseData = await res.json().catch(() => null);
+
+        if (!res.ok) {
+            throw new Error(responseData?.error || "Failed to trigger Git task");
+        }
+
+        if (responseData?.result === 'ok') {
+            return { success: true, data: responseData };
+        }
+        
+        throw new Error(responseData?.error || "Git task did not return 'ok'");
+
+    } catch (e) {
+        console.error(`[triggerGitTask: ${task}] Error:`, e);
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+}
+
 export default function ToolsPage() {
     const params = useParams()
     const router = useRouter()
     const botId = params.id as string
-    // Removed useToast
-    // const { toast } = useToast()
-    const [toast, setToast] = useState<string | null>(null); // Added local toast state
+    const [toast, setToast] = useState<string | null>(null); // Local toast state
 
     const [isLoading, setIsLoading] = useState(true)
     const [botDetails, setBotDetails] = useState<BotDetails | null>(null)
@@ -122,7 +151,6 @@ export default function ToolsPage() {
     const apiKey =
         typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
 
-    // Function to show toast message
     const showToast = (message: string, duration = 2000) => {
         setToast(message);
         setTimeout(() => setToast(null), duration);
@@ -144,7 +172,7 @@ export default function ToolsPage() {
             showToast("Error: Failed to load bot details.", 3000)
         }
         setIsLoading(false)
-    }, [botId, apiKey]) // Removed toast from dependencies
+    }, [botId, apiKey])
 
     useEffect(() => {
         loadBotDetails()
@@ -157,11 +185,12 @@ export default function ToolsPage() {
             name: botDetails.name,
             token: botDetails.token,
             csv_url: csvUrl.trim() || null,
-            git_remote: botDetails.git_remote,
+            git_remote: null,
         });
         if (result.success && result.data) {
             setBotDetails(result.data);
             setCsvUrl(result.data.csv_url || "");
+            setGitRemoteUrl("");
             showToast("Success: Commands imported from CSV URL.");
         } else {
             showToast(`CSV Import Failed: ${result.error || "Could not import from CSV."}`, 3000);
@@ -196,20 +225,33 @@ export default function ToolsPage() {
     const handleExportGit = async () => {
         if (!apiKey || !botDetails) return;
         setIsExportingGit(true);
-        const result = await updateBotDetails(botId, apiKey, {
+
+        const saveResult = await updateBotDetails(botId, apiKey, {
             name: botDetails.name,
             token: botDetails.token,
             csv_url: null,
             git_remote: gitRemoteUrl.trim() || null,
         });
-        if (result.success && result.data) {
-            setBotDetails(result.data);
-            setGitRemoteUrl(result.data.git_remote || "");
-            setCsvUrl("");
-            showToast("Success: Bot exported to Git repository.");
-        } else {
-            showToast(`Git Export Failed: ${result.error || "Could not export to Git."}`, 3000);
+
+        if (!saveResult.success || !saveResult.data) {
+            showToast(`Git URL Save Failed: ${saveResult.error || "Could not save Git URL."}`, 3000);
+            setIsExportingGit(false);
+            return;
         }
+
+        setBotDetails(saveResult.data);
+        setGitRemoteUrl(saveResult.data.git_remote || "");
+        setCsvUrl("");
+        showToast("Git URL saved. Starting export...");
+
+        const exportResult = await triggerGitTask(botId, apiKey, "git_export_tasks");
+
+        if (exportResult.success) {
+            showToast("Success: Bot export to Git repository initiated.");
+        } else {
+            showToast(`Git Export Failed: ${exportResult.error || "Could not start export."}`, 3000);
+        }
+
         setIsExportingGit(false);
     };
 
@@ -220,20 +262,34 @@ export default function ToolsPage() {
     const handleConfirmGitImport = async () => {
         if (!apiKey || !botDetails) return;
         setIsImportingGit(true);
-        const result = await updateBotDetails(botId, apiKey, {
+
+        const saveResult = await updateBotDetails(botId, apiKey, {
             name: botDetails.name,
             token: botDetails.token,
             csv_url: null,
             git_remote: gitRemoteUrl.trim() || null,
         });
-        if (result.success && result.data) {
-            setBotDetails(result.data);
-            setGitRemoteUrl(result.data.git_remote || "");
-            setCsvUrl("");
-            showToast("Success: Bot imported from Git. Commands may take a moment.", 3000);
-        } else {
-            showToast(`Git Import Failed: ${result.error || "Could not import from Git."}`, 3000);
+
+        if (!saveResult.success || !saveResult.data) {
+            showToast(`Git URL Save Failed: ${saveResult.error || "Could not save Git URL."}`, 3000);
+            setIsImportingGit(false);
+            setShowGitImportConfirm(false);
+            return;
         }
+
+        setBotDetails(saveResult.data);
+        setGitRemoteUrl(saveResult.data.git_remote || "");
+        setCsvUrl("");
+        showToast("Git URL saved. Starting import...");
+
+        const importResult = await triggerGitTask(botId, apiKey, "git_import_tasks");
+
+        if (importResult.success) {
+            showToast("Success: Bot import from Git initiated. Commands may take a moment.", 3000);
+        } else {
+            showToast(`Git Import Failed: ${importResult.error || "Could not start import."}`, 3000);
+        }
+
         setIsImportingGit(false);
         setShowGitImportConfirm(false);
     };
@@ -254,7 +310,7 @@ export default function ToolsPage() {
     }
 
     return (
-        <div className="flex flex-col h-full relative"> {/* Added relative positioning */}
+        <div className="flex flex-col h-full relative">
             <div className="sticky top-0 z-20 border-b bg-card/60 backdrop-blur-xl">
                  <div className="flex gap-1 p-2 overflow-x-auto">
                     {TABS.map((tab) => {
@@ -267,7 +323,7 @@ export default function ToolsPage() {
                             }}
                             variant={tab.id === "tools" ? "default" : "outline"}
                             size="sm"
-                            className="gap-2 cursor-pointer whitespace-nowrap"
+                            className="gap-2 cursor-pointer whitespace-nowMrap"
                         >
                             <Icon className="w-4 h-4" />
                             {tab.label}
@@ -297,7 +353,11 @@ export default function ToolsPage() {
                             placeholder="Enter Google Sheet CSV URL (e.g., .../pub?output=csv)"
                             disabled={isImportingCsv}
                         />
-                        <Button onClick={handleImportCsv} disabled={isImportingCsv || !csvUrl.trim()}>
+                        <Button
+                            onClick={handleImportCsv}
+                            disabled={isImportingCsv || !csvUrl.trim() || isExportingGit || isImportingGit}
+                            className="w-full"
+                        >
                             {isImportingCsv ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <UploadCloud className="w-4 h-4 mr-2"/>}
                             {isImportingCsv ? "Importing..." : "Import Commands"}
                         </Button>
@@ -310,7 +370,7 @@ export default function ToolsPage() {
                         <CardDescription>Create an exact copy of this bot, including commands, settings, and libraries.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Button onClick={handleCloneBot} disabled={isCloning}>
+                        <Button onClick={handleCloneBot} disabled={isCloning} className="w-full">
                              {isCloning ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <CopyIcon className="w-4 h-4 mr-2"/>}
                             {isCloning ? "Cloning..." : "Make a Copy"}
                         </Button>
@@ -356,16 +416,25 @@ export default function ToolsPage() {
                                 value={gitRemoteUrl}
                                 onChange={(e) => setGitRemoteUrl(e.target.value)}
                                 placeholder="git@github.com:user/repo.git"
-                                disabled={isExportingGit || isImportingGit}
+                                disabled={isExportingGit || isImportingGit || isImportingCsv}
                             />
                         </div>
                         <div className="flex gap-2 pt-2">
-                             <Button onClick={handleExportGit} disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim()}>
+                             <Button
+                                onClick={handleExportGit}
+                                disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim() || isImportingCsv}
+                                className="w-full"
+                            >
                                 {isExportingGit ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <UploadCloud className="w-4 h-4 mr-2"/>}
                                 {isExportingGit ? "Exporting..." : "Export to Git"}
                             </Button>
-                             <Button variant="outline" onClick={handleImportGitRequest} disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim()}>
-                                 <DownloadCloud className="w-4 h-4 mr-2"/>
+                             <Button
+                                variant="outline"
+                                onClick={handleImportGitRequest}
+                                disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim() || isImportingCsv}
+                                className="w-full"
+                            >
+                                <DownloadCloud className="w-4 h-4 mr-2"/>
                                 Import from Git
                             </Button>
                         </div>

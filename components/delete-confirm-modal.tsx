@@ -8,9 +8,9 @@ interface DeleteConfirmModalProps {
   onConfirm: () => void
   onCancel: () => void
   isLoading: boolean
-  title: string // Was hard-coded "Delete Bot?"
-  description: React.ReactNode // Was hard-coded with `botName`
-  confirmText?: string // Was hard-coded "Delete Bot"
+  title: string 
+  description: React.ReactNode
+  confirmText?: string 
 }
 
 export function DeleteConfirmModal({
@@ -19,7 +19,7 @@ export function DeleteConfirmModal({
   isLoading,
   title,
   description,
-  confirmText = "Delete", // Default to "Delete"
+  confirmText = "Delete", 
 }: DeleteConfirmModalProps) {
   return (
     // Re-added bg-black/50 for the dim effect you wanted
@@ -58,7 +58,7 @@ export function DeleteConfirmModal({
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deleting...
+                  Loading...
                 </>
               ) : (
                 confirmText // Use the prop here
