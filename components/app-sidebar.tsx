@@ -11,6 +11,7 @@ export function AppSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () =
   const router = useRouter()
   const pathname = usePathname()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [appVersion, setAppVersion] = useState("v2.0")
 
   useEffect(() => {
     if (isOpen) {
@@ -22,6 +23,28 @@ export function AppSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () =
       document.body.style.overflow = "unset"
     }
   }, [isOpen])
+
+  // Fetch the version on component mount
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        // Fetch from our OWN API route to bypass CORS
+        const res = await fetch("/api/version", {
+          cache: "no-store",
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.version) {
+            setAppVersion(`v${data.version}`)
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch app version:", error)
+      }
+    }
+
+    fetchVersion()
+  }, []) // Empty dependency array ensures this runs once
 
   const navItems = [
     { href: "/app/bots", label: "Bots", icon: Bot },
@@ -112,7 +135,8 @@ export function AppSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () =
             Logout
           </Button>
 
-          <p className="text-xs text-muted-foreground text-center">v2.0</p>
+          {/* Use the state variable here */}
+          <p className="text-xs text-muted-foreground text-center">{appVersion}</p>
         </div>
       </aside>
 

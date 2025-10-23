@@ -5,7 +5,7 @@ import dynamic from "next/dynamic"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Loader2, Pencil, Code2, Trash2, Search as SearchIcon, X } from "lucide-react"
+import { Loader2, Pencil, Code2, Trash2, Search as SearchIcon, X, Folder, FolderOpen } from "lucide-react"
 import clsx from "clsx"
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false })
@@ -43,9 +43,7 @@ function toAliasText(aliases: unknown): string {
     return aliases
       .map((a) => {
         if (typeof a === "string") return a
-        if (a && typeof a === "object" && "command" in a)
-          // @ts-ignore
-          return typeof a.command === "string" ? a.command : ""
+        if (a && typeof a === "object" && "command" in a) return typeof (a as any).command === "string" ? (a as any).command : ""
         return ""
       })
       .filter(Boolean)
@@ -74,7 +72,6 @@ export function CommandsList(props: Props) {
   const [q, setQ] = useState("")
   const [activeFolder, setActiveFolder] = useState<string | "all">("all")
   const searchRef = useRef<HTMLInputElement | null>(null)
-
   const [emptyAnimationData, setEmptyAnimationData] = useState<any>(null)
 
   useEffect(() => {
@@ -94,15 +91,6 @@ export function CommandsList(props: Props) {
       .then(setEmptyAnimationData)
       .catch(() => {})
   }, [])
-
-  const countByFolder = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const c of commands) {
-      const id = c.commands_folder_id == null ? "" : String(c.commands_folder_id)
-      map.set(id, (map.get(id) || 0) + 1)
-    }
-    return map
-  }, [commands])
 
   const normalized = useMemo(() => {
     const nq = q.trim().toLowerCase()
@@ -130,24 +118,21 @@ export function CommandsList(props: Props) {
   }
 
   return (
-    <div className={clsx("space-y-6", className)}>
-      <div className="flex flex-col gap-4">
-        <div className="flex items-start sm:items-center justify-between gap-3">
-          <div className="space-y-1">
+    // No outer horizontal padding. This keeps the page 100% width.
+    <div className={clsx("min-w-0 space-y-6", className)}>
+      <div className="flex flex-col gap-4 min-w-0 px-2 sm:px-3 md:px-4">
+        <div className="flex items-start sm:items-center justify-between gap-3 min-w-0">
+          <div className="space-y-1 min-w-0">
             <h2 className="text-3xl font-bold">Commands</h2>
             <p className="text-muted-foreground">
-              Total <span className="font-semibold text-foreground">{totalCount}</span>
-              {q || activeFolder !== "all" ? (
-                <>
-                  {" · "}Showing <span className="font-semibold text-foreground">{filteredCount}</span>
-                </>
-              ) : null}
+              Total: <span className="font-semibold text-foreground">{totalCount}</span> {" - "}
+              Showing: <span className="font-semibold text-foreground">{filteredCount}</span>
             </p>
           </div>
           <Button onClick={onCreate} className="self-start sm:self-auto">New Command</Button>
         </div>
 
-        <div className="relative group">
+        <div className="relative group min-w-0">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary" />
           <Input
             ref={searchRef}
@@ -167,40 +152,70 @@ export function CommandsList(props: Props) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <FolderPill
-            label={`All (${totalCount})`}
-            active={activeFolder === "all"}
-            onClick={() => setActiveFolder("all")}
-          />
-          {folders.map((f) => {
-            const id = String(f.id)
-            const name = folderMap.get(id) || `Folder ${id}`
-            const cnt = countByFolder.get(id) || 0
-            return (
-              <FolderPill
-                key={id}
-                label={`${name} (${cnt})`}
-                active={activeFolder === id}
-                onClick={() => setActiveFolder(id)}
-              />
-            )
-          })}
+        {/* Folder filter bar – full width, no outer gutters */}
+        <div className="w-full overflow-hidden">
+          <div
+            className="max-w-full overflow-x-auto overflow-y-hidden whitespace-nowrap [scrollbar-gutter:stable] snap-x snap-mandatory"
+            role="tablist"
+            aria-label="Command folders"
+            style={{ contain: "inline-size" }}
+          >
+            <div className="flex w-fit items-center gap-2 py-1 px-2">
+              <button
+                role="tab"
+                aria-selected={activeFolder === "all"}
+                onClick={() => setActiveFolder("all")}
+                className={clsx(
+                  "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm max-w-[60vw] md:max-w-[28ch] snap-start",
+                  "transition-colors",
+                  activeFolder === "all"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background hover:bg-muted border-border text-foreground"
+                )}
+              >
+                <FolderOpen className="w-4 h-4" />
+                <span className="truncate">All</span>
+              </button>
+
+              {folders.map((f) => {
+                const id = String(f.id)
+                const label = (f.name ?? f.title ?? "").toString().trim() || `Folder ${id}`
+                const active = activeFolder === id
+                return (
+                  <button
+                    key={id}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setActiveFolder(id)}
+                    className={clsx(
+                      "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm max-w-[60vw] md:max-w-[28ch] snap-start",
+                      "transition-colors",
+                      active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border text-foreground"
+                    )}
+                    title={label}
+                  >
+                    <Folder className="w-4 h-4" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4">
+      {/* Cards section – still full-bleed; local padding inside cards only */}
+      <div className="grid gap-4 min-w-0 px-2 sm:px-3 md:px-4">
         {normalized.map((cmd) => {
           const fid = cmd.commands_folder_id == null ? "" : String(cmd.commands_folder_id)
-          const folderName = fid ? (folderMap.get(fid) || `Folder ${fid}`) : "—"
+          const folderName = fid ? folderMap.get(fid) || `Folder ${fid}` : "—"
           const aliasText = toAliasText(cmd.aliases)
           return (
             <Card key={cmd.id} className="p-4">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-2 min-w-0">
+                <div className="flex items-start justify-between gap-3 min-w-0">
                   <h3 className="text-lg font-semibold break-all">{cmd.command}</h3>
                 </div>
-
                 <div className="text-sm text-muted-foreground">
                   <div>Folder: {folderName}</div>
                   {aliasText ? (
@@ -208,11 +223,8 @@ export function CommandsList(props: Props) {
                       Aliases: <span className="text-foreground">{aliasText}</span>
                     </div>
                   ) : null}
-                  {cmd.updated_at && (
-                    <div>Updated: {new Date(cmd.updated_at).toLocaleString()}</div>
-                  )}
+                  {cmd.updated_at && <div>Updated: {new Date(cmd.updated_at).toLocaleString()}</div>}
                 </div>
-
                 <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-end">
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => onEdit(cmd)}>
@@ -235,55 +247,34 @@ export function CommandsList(props: Props) {
         })}
 
         {normalized.length === 0 && (
-          <Card className="p-8 text-center border-muted bg-card/50">
+          <div className="p-0 text-center">
             <div className="flex flex-col items-center justify-center space-y-6 p-6">
               {emptyAnimationData ? (
-                <div className="w-64 h-64 mx-auto -mb-4">
-                  <Lottie
-                    animationData={emptyAnimationData}
-                    loop
-                    autoplay
-                    className="w-full h-full"
-                    style={{ background: "transparent" }}
-                  />
+                <div className="mx-auto pointer-events-none w-full max-w-xs sm:max-w-sm md:max-w-md aspect-square overflow-hidden">
+                  <Lottie animationData={emptyAnimationData} loop autoplay className="w-full h-full" style={{ background: "transparent" }} />
                 </div>
               ) : (
-                <div className="w-24 h-24 rounded-full bg-muted/50 flex items-center justify-center mb-4 border border-border">
+                <div className="w-24 h-24 flex items-center justify-center mb-4">
                   <Loader2 className="w-12 h-12 animate-spin text-muted-foreground" />
                 </div>
               )}
               <p className="text-muted-foreground text-lg">No commands match your filters.</p>
-              <Button variant="ghost" onClick={() => setQ("")} className="mt-2">
-                Clear search
-              </Button>
+              <div className="flex gap-2">
+                {q && (
+                  <Button variant="ghost" onClick={() => setQ("")} className="mt-2">
+                    Clear search
+                  </Button>
+                )}
+                {activeFolder !== "all" && (
+                  <Button variant="ghost" onClick={() => setActiveFolder("all")} className="mt-2">
+                    Show all folders
+                  </Button>
+                )}
+              </div>
             </div>
-          </Card>
+          </div>
         )}
       </div>
     </div>
-  )
-}
-
-function FolderPill({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        "px-3 py-1.5 text-sm rounded-full border transition-colors whitespace-nowrap",
-        active
-          ? "bg-primary text-primary-foreground border-primary"
-          : "bg-card hover:bg-accent/50 border-border text-foreground"
-      )}
-    >
-      {label}
-    </button>
   )
 }

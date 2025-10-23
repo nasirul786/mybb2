@@ -14,40 +14,10 @@ import {
   updateCommand,
   deleteCommand,
 } from "@/lib/commands-api"
-import { Button } from "@/components/ui/button"
-import {
-  Terminal,
-  Wrench,
-  MessageSquare,
-  Settings,
-  Package,
-  Folder,
-  Megaphone,
-  AlertTriangle,
-  Loader2, 
-  Trash2, LayoutDashboard
-} from "lucide-react"
 
-const TABS = [
-  { id: "commands", label: "Commands", icon: Terminal },
-  { id: "tools", label: "Tools", icon: Wrench },
-  { id: "chats", label: "Chats", icon: MessageSquare },
-  { id: "properties", label: "Properties", icon: Settings },
-  { id: "libraries", label: "Libraries", icon: Package },
-  { id: "folders", label: "Folders", icon: Folder },
-  { id: "admin-panel", label: "Admin Panel", icon: LayoutDashboard },
-  { id: "broadcast", label: "Broadcast", icon: Megaphone },
-  { id: "errors", label: "Errors", icon: AlertTriangle },
-]
-
-// Helper function to normalize API data for aliases (if needed)
 const normalizeCommandAliases = (cmd: Command): Command => {
   if (Array.isArray(cmd.aliases)) {
-    return {
-      ...cmd,
-      // @ts-ignore - Changing type from object[] to string[]
-      aliases: cmd.aliases.map((a: any) => a.command),
-    }
+    return { ...cmd, aliases: (cmd.aliases as any[]).map((a: any) => a.command) }
   }
   return cmd
 }
@@ -63,12 +33,11 @@ export default function CommandsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [selectedCommand, setSelectedCommand] = useState<Command | null>(null)
-  const [isSaving, setIsSaving] = useState(false) // Used for create/update/save code
+  const [isSaving, setIsSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Command | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false) // Separate state for delete operation
+  const [isDeleting, setIsDeleting] = useState(false)
 
-  const apiKey =
-    typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(process.NEXT_PUBLIC_API_KEY_STORAGE_KE) : null
 
   useEffect(() => {
     loadData()
@@ -85,11 +54,7 @@ export default function CommandsPage() {
       setSelectedCommand(cmd)
       setIsEditorOpen(true)
     } else {
-      history.replaceState(
-        null,
-        "",
-        window.location.pathname + window.location.search
-      )
+      history.replaceState(null, "", window.location.pathname + window.location.search)
     }
   }, [commands])
 
@@ -115,7 +80,7 @@ export default function CommandsPage() {
       const all: Command[] = []
       let page = 1
       while (true) {
-        const url = `https://appapi.bots.business/v2/bots/${botId}/commands?page=${page}&api_key=${apiKey}`
+        const url = `${process.env.NEXT_PUBLIC_API_URL}/${botId}/commands?page=${page}&api_key=${apiKey}`
         const r = await fetch(url)
         if (!r.ok) throw new Error("Failed to fetch commands")
         const batch: Command[] = await r.json()
@@ -124,7 +89,7 @@ export default function CommandsPage() {
         page += 1
       }
       const fldrs = await fetchFolders(botId, apiKey)
-      setCommands(all.map(normalizeCommandAliases)) // Normalize here
+      setCommands(all.map(normalizeCommandAliases))
       setFolders(fldrs)
     } catch (e) {
       console.error("[commands] load error:", e)
@@ -139,7 +104,7 @@ export default function CommandsPage() {
     try {
       const result = await createCommand(botId, apiKey, data)
       if (result) {
-        setCommands((prev) => [...prev, normalizeCommandAliases(result)]) // Normalize here
+        setCommands((prev) => [...prev, normalizeCommandAliases(result)])
         setIsModalOpen(false)
       }
     } catch (e) {
@@ -153,17 +118,10 @@ export default function CommandsPage() {
     if (!apiKey || !selectedCommand) return
     setIsSaving(true)
     try {
-      const result = await updateCommand(
-        botId,
-        String(selectedCommand.id),
-        apiKey,
-        data
-      )
+      const result = await updateCommand(botId, String(selectedCommand.id), apiKey, data)
       if (result) {
-        const normalizedResult = normalizeCommandAliases(result) // Normalize here
-        setCommands((prev) =>
-          prev.map((c) => (c.id === result.id ? normalizedResult : c))
-        )
+        const normalizedResult = normalizeCommandAliases(result)
+        setCommands((prev) => prev.map((c) => (c.id === result.id ? normalizedResult : c)))
         setSelectedCommand(normalizedResult)
         setIsModalOpen(false)
       }
@@ -178,29 +136,21 @@ export default function CommandsPage() {
     if (!apiKey || !selectedCommand) return
     setIsSaving(true)
     try {
-      const result = await updateCommand(
-        botId,
-        String(selectedCommand.id),
-        apiKey,
-        {
-          bjs_code: code,
-          command: selectedCommand.command,
-          answer: selectedCommand.answer,
-          // @ts-ignore - map string[] back to object[] for API
-          aliases: selectedCommand.aliases.map((a: string) => ({ command: a })),
-          help: selectedCommand.help,
-          keyboard_body: selectedCommand.keyboard_body,
-          commands_folder_id: selectedCommand.commands_folder_id,
-          auto_retry_time: selectedCommand.auto_retry_time,
-          need_reply: selectedCommand.need_reply,
-        }
-      )
+      const result = await updateCommand(botId, String(selectedCommand.id), apiKey, {
+        bjs_code: code,
+        command: selectedCommand.command,
+        answer: selectedCommand.answer,
+        aliases: (selectedCommand.aliases as string[]).map((a: string) => ({ command: a })),
+        help: selectedCommand.help,
+        keyboard_body: selectedCommand.keyboard_body,
+        commands_folder_id: selectedCommand.commands_folder_id,
+        auto_retry_time: (selectedCommand as any).auto_retry_time,
+        need_reply: (selectedCommand as any).need_reply,
+      })
       if (result) {
-        const normalizedResult = normalizeCommandAliases(result) // Normalize here
-        setCommands((prev) =>
-          prev.map((c) => (c.id === result.id ? normalizedResult : c))
-        )
-        setSelectedCommand(normalizedResult) // Update selected command too
+        const normalizedResult = normalizeCommandAliases(result)
+        setCommands((prev) => prev.map((c) => (c.id === result.id ? normalizedResult : c)))
+        setSelectedCommand(normalizedResult)
       }
     } catch (e) {
       console.error("[commands] save code error:", e)
@@ -209,7 +159,6 @@ export default function CommandsPage() {
     }
   }
 
-  // FIX: Separate function to handle the actual deletion
   const handleConfirmDelete = async () => {
     if (!apiKey || !deleteConfirm) return
     setIsDeleting(true)
@@ -219,7 +168,6 @@ export default function CommandsPage() {
       setDeleteConfirm(null)
     } catch (e) {
       console.error("[commands] delete error:", e)
-      // TODO: Show an error message to the user
     } finally {
       setIsDeleting(false)
     }
@@ -238,38 +186,14 @@ export default function CommandsPage() {
     history.back()
   }
 
-  const currentCommandName = useMemo(
-    () => selectedCommand?.command || "",
-    [selectedCommand]
-  )
+  const currentCommandName = useMemo(() => selectedCommand?.command || "", [selectedCommand])
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="sticky top-0 z-20 bg-card/60 backdrop-blur-xl border-b">
-        <div className="flex gap-1 p-2 overflow-x-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <Button
-                key={tab.id}
-                onClick={() => {
-                  if (tab.id !== "commands")
-                    router.push(`/app/bots/${botId}/${tab.id}`)
-                }}
-                variant={tab.id === "commands" ? "default" : "outline"}
-                size="sm"
-                className="gap-2 whitespace-nowrap"
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </Button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-6">
+    // Full-bleed, no outer padding/gutters from parent layout
+    <main className="absolute inset-0 flex flex-col min-w-0 pt-30 sm:pt-30">
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
         <CommandsList
+          className="min-w-0" // do not re-introduce horizontal padding
           commands={commands}
           folders={folders}
           onEdit={(cmd) => {
@@ -277,7 +201,7 @@ export default function CommandsPage() {
             setIsModalOpen(true)
           }}
           onCode={(cmd) => openEditor(cmd)}
-          onDelete={(cmd) => setDeleteConfirm(cmd)} // Just set the command to confirm
+          onDelete={(cmd) => setDeleteConfirm(cmd)}
           onCreate={() => {
             setSelectedCommand(null)
             setIsModalOpen(true)
@@ -292,7 +216,7 @@ export default function CommandsPage() {
         onSave={handleSaveCode}
         commandName={currentCommandName}
         initialCode={selectedCommand?.code || selectedCommand?.bjs_code || ""}
-        isLoading={isSaving} // Use general saving state
+        isLoading={isSaving}
         showCloseOnMobile={true}
         onEditMeta={() => setIsModalOpen(true)}
       />
@@ -303,28 +227,23 @@ export default function CommandsPage() {
         onSave={selectedCommand ? handleUpdateCommand : handleCreateCommand}
         command={selectedCommand}
         folders={folders}
-        isLoading={isSaving} // Use general saving state
+        isLoading={isSaving}
       />
 
-      {/* FIX: Use the reusable DeleteConfirmModal */}
       {deleteConfirm && (
         <DeleteConfirmModal
           title="Delete Command?"
           description={
             <>
-              Delete{" "}
-              <span className="font-semibold text-foreground">
-                {deleteConfirm.command}
-              </span>
-              ? This cannot be undone.
+              Delete <span className="font-semibold text-foreground">{deleteConfirm.command}</span>? This cannot be undone.
             </>
           }
           confirmText="Delete"
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeleteConfirm(null)}
-          isLoading={isDeleting} // Use specific deleting state
+          isLoading={isDeleting}
         />
       )}
-    </div>
+    </main>
   )
 }

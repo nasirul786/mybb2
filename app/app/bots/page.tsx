@@ -40,7 +40,7 @@ export default function BotsPage() {
   const [emptyAnimationData, setEmptyAnimationData] = useState(null)
 
   useEffect(() => {
-    const storedApiKey = localStorage.getItem("mybb_api_key")
+    const storedApiKey = localStorage.getItem(process.NEXT_PUBLIC_API_KEY_STORAGE_KE)
     if (!storedApiKey) {
       router.push("/app")
       return
@@ -61,7 +61,7 @@ export default function BotsPage() {
     isLoading,
     mutate,
   } = useSWR(
-    apiKey ? `https://appapi.bots.business/v2/bots?api_key=${apiKey}` : null,
+    apiKey ? `${process.env.NEXT_PUBLIC_API_URL}/bots?api_key=${apiKey}` : null,
     async (url) => {
       const response = await fetch(url)
       if (!response.ok) throw new Error("Failed to fetch bots")

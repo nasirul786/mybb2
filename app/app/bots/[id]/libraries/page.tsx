@@ -1,44 +1,15 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Terminal,
-  Wrench,
-  MessageSquare,
-  Settings,
-  Package,
-  Folder,
-  Megaphone,
-  AlertTriangle,
-  Loader2,
-  Search,
-  X,
-  Book,
-  Trash2, LayoutDashboard
-} from "lucide-react"
+import { Package, Loader2, Search, X } from "lucide-react"
 import { LibraryCard } from "@/components/library-card"
 import { LibraryReadmeModal } from "@/components/library-readme-modal"
 import { InstalledLibsModal } from "@/components/installed-libs-modal"
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
 
-const TABS = [
-  { id: "commands", label: "Commands", icon: Terminal },
-  { id: "tools", label: "Tools", icon: Wrench },
-  { id: "chats", label: "Chats", icon: MessageSquare },
-  { id: "properties", label: "Properties", icon: Settings },
-  { id: "libraries", label: "Libraries", icon: Package },
-  { id: "folders", label: "Folders", icon: Folder },
-  { id: "admin-panel", label: "Admin Panel", icon: LayoutDashboard },
-  { id: "broadcast", label: "Broadcast", icon: Megaphone },
-  { id: "errors", label: "Errors", icon: AlertTriangle },
-]
-
-// --- Types defined directly in the file as requested ---
-
-// This is the shape of a library from the main store list
 export type StoreLibrary = {
   id: number
   name: string
@@ -49,7 +20,6 @@ export type StoreLibrary = {
   updated_at: string
 }
 
-// This is the shape of a library that is installed on a bot
 export type InstalledLibrary = {
   id: number
   name: string
@@ -59,18 +29,11 @@ export type InstalledLibrary = {
 
 const BASE_URL = "https://appapi.bots.business/v2"
 
-// --- API functions defined in the page file ---
-
-/**
- * Fetches the list of all available libraries from the store.
- */
 async function fetchAllLibraries(apiKey: string): Promise<StoreLibrary[]> {
   try {
     const url = `${BASE_URL}/store/libs?api_key=${apiKey}`
     const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch libraries: ${res.statusText}`)
-    }
+    if (!res.ok) throw new Error(`Failed to fetch libraries: ${res.statusText}`)
     return (await res.json()) as StoreLibrary[]
   } catch (e) {
     console.error("[fetchAllLibraries] Error:", e)
@@ -78,19 +41,11 @@ async function fetchAllLibraries(apiKey: string): Promise<StoreLibrary[]> {
   }
 }
 
-/**
- * Fetches the list of libraries installed for a specific bot.
- */
-async function fetchInstalledLibraries(
-  botId: string,
-  apiKey: string
-): Promise<InstalledLibrary[]> {
+async function fetchInstalledLibraries(botId: string, apiKey: string): Promise<InstalledLibrary[]> {
   try {
     const url = `${BASE_URL}/bots/${botId}/libs?api_key=${apiKey}`
     const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch installed libraries: ${res.statusText}`)
-    }
+    if (!res.ok) throw new Error(`Failed to fetch installed libraries: ${res.statusText}`)
     return (await res.json()) as InstalledLibrary[]
   } catch (e) {
     console.error("[fetchInstalledLibraries] Error:", e)
@@ -98,14 +53,7 @@ async function fetchInstalledLibraries(
   }
 }
 
-/**
- * Installs a library to a specific bot.
- */
-async function installLibrary(
-  botId: string,
-  libId: number,
-  apiKey: string
-): Promise<{ success: boolean; error?: string }> {
+async function installLibrary(botId: string, libId: number, apiKey: string): Promise<{ success: boolean; error?: string }> {
   try {
     const url = `${BASE_URL}/bots/${botId}/libs?api_key=${apiKey}`
     const res = await fetch(url, {
@@ -115,12 +63,8 @@ async function installLibrary(
     })
 
     const resultText = await res.text()
+    if (res.ok && resultText === "true") return { success: true }
 
-    if (res.ok && resultText === "true") {
-      return { success: true }
-    }
-
-    // Handle non-OK or error JSON responses
     try {
       const json = JSON.parse(resultText)
       return { success: false, error: json.error || "Failed to install" }
@@ -133,24 +77,13 @@ async function installLibrary(
   }
 }
 
-/**
- * Deletes (uninstalls) a library from a specific bot.
- */
-async function deleteLibrary(
-  botId: string,
-  libId: number,
-  apiKey: string
-): Promise<{ success: boolean; error?: string }> {
+async function deleteLibrary(botId: string, libId: number, apiKey: string): Promise<{ success: boolean; error?: string }> {
   try {
     const url = `${BASE_URL}/bots/${botId}/libs/${libId}?api_key=${apiKey}`
     const res = await fetch(url, { method: "DELETE" })
-
     const resultText = await res.text()
 
-    if (res.ok && resultText === "true") {
-      return { success: true }
-    }
-
+    if (res.ok && resultText === "true") return { success: true }
     return { success: false, error: "Delete operation failed" }
   } catch (e) {
     console.error("[deleteLibrary] Error:", e)
@@ -158,45 +91,31 @@ async function deleteLibrary(
   }
 }
 
-// --- Page Component ---
-
 export default function LibrariesPage() {
   const params = useParams()
-  const router = useRouter()
   const botId = params.id as string
 
   const [allLibraries, setAllLibraries] = useState<StoreLibrary[]>([])
-  const [installedLibraries, setInstalledLibraries] = useState<
-    InstalledLibrary[]
-  >([])
+  const [installedLibraries, setInstalledLibraries] = useState<InstalledLibrary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState("")
-
   const [readmeModalOpen, setReadmeModalOpen] = useState(false)
   const [installedModalOpen, setInstalledModalOpen] = useState(false)
   const [selectedLib, setSelectedLib] = useState<StoreLibrary | null>(null)
-
-  const [deleteConfirm, setDeleteConfirm] = useState<InstalledLibrary | null>(
-    null
-  )
+  const [deleteConfirm, setDeleteConfirm] = useState<InstalledLibrary | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
   const searchRef = useRef<HTMLInputElement | null>(null)
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
 
-  const apiKey =
-    typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
-
-  // Load all data on mount
   useEffect(() => {
     if (!apiKey) {
       setIsLoading(false)
-      // Maybe redirect to login or show error
       return
     }
     loadAllData()
   }, [botId, apiKey])
 
-  // Add useEffect for Ctrl+K
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -220,53 +139,40 @@ export default function LibrariesPage() {
     setIsLoading(false)
   }
 
-  // Create a Set of installed lib IDs for quick lookup
-  const installedLibIds = useMemo(() => {
-    return new Set(installedLibraries.map((lib) => lib.id))
-  }, [installedLibraries])
+  const installedLibIds = useMemo(() => new Set(installedLibraries.map((lib) => lib.id)), [installedLibraries])
 
-  // Filter libraries based on search
   const filteredLibraries = useMemo(() => {
     const q = search.toLowerCase().trim()
     if (!q) return allLibraries
     return allLibraries.filter(
-      (lib) =>
-        lib.name.toLowerCase().includes(q) ||
-        lib.description.toLowerCase().includes(q)
+      (lib) => lib.name.toLowerCase().includes(q) || lib.description.toLowerCase().includes(q)
     )
   }, [allLibraries, search])
-
-  // --- Handlers ---
 
   const handleInstall = async (libId: number) => {
     if (!apiKey) return false
     const result = await installLibrary(botId, libId, apiKey)
     if (result.success) {
-      // Refresh installed list
       const installedLibs = await fetchInstalledLibraries(botId, apiKey)
       setInstalledLibraries(installedLibs)
       return true
     } else {
       console.error("Failed to install:", result.error)
-      alert(`Install failed: ${result.error}`) // Simple alert for now
+      alert(`Install failed: ${result.error}`)
       return false
     }
   }
 
-  // This function now performs the delete after confirmation
   const handleConfirmDelete = async () => {
     if (!apiKey || !deleteConfirm) return
     setIsDeleting(true)
     const result = await deleteLibrary(botId, deleteConfirm.id, apiKey)
     if (result.success) {
-      // Refresh list on success
-      setInstalledLibraries((prev) =>
-        prev.filter((lib) => lib.id !== deleteConfirm.id)
-      )
+      setInstalledLibraries((prev) => prev.filter((lib) => lib.id !== deleteConfirm.id))
       setDeleteConfirm(null)
     } else {
       console.error("Failed to delete:", result.error)
-      alert(`Delete failed: ${result.error}`) // Simple alert for now
+      alert(`Delete failed: ${result.error}`)
     }
     setIsDeleting(false)
   }
@@ -277,44 +183,18 @@ export default function LibrariesPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Tab Navigation (using z-20 from our previous fix) */}
-      <div className="sticky top-0 z-20 border-b bg-card/60 backdrop-blur-xl">
-        <div className="flex gap-1 p-2 overflow-x-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <Button
-                key={tab.id}
-                onClick={() => {
-                  router.push(`/app/bots/${botId}/${tab.id}`)
-                }}
-                variant={tab.id === "libraries" ? "default" : "outline"}
-                size="sm"
-                className="gap-2 cursor-pointer whitespace-nowrap"
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </Button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* This div is now the main scroller */}
+    // Full-bleed page with global tabs from layout, top spacing = pt-25
+    <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto">
-        {/* Header & Search moved INSIDE the scroller */}
         <div className="p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <h2 className="text-3xl font-bold">Library Store</h2>
-            <Button
-              variant="outline"
-              onClick={() => setInstalledModalOpen(true)}
-            >
+            <Button variant="outline" onClick={() => setInstalledModalOpen(true)}>
               <Package className="w-4 h-4 mr-2" />
               Installed Libraries ({installedLibraries.length})
             </Button>
           </div>
+
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary" />
             <Input
@@ -336,7 +216,6 @@ export default function LibrariesPage() {
           </div>
         </div>
 
-        {/* Content grid is now inside the scroller, with its own padding */}
         <div className="px-6 pb-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
@@ -363,7 +242,6 @@ export default function LibrariesPage() {
         </div>
       </div>
 
-      {/* Modals */}
       <LibraryReadmeModal
         isOpen={readmeModalOpen}
         onClose={() => setReadmeModalOpen(false)}
@@ -377,7 +255,6 @@ export default function LibrariesPage() {
         onDelete={setDeleteConfirm}
       />
 
-      {/* FIX: Replaced manual modal with the reusable component */}
       {deleteConfirm && (
         <DeleteConfirmModal
           onCancel={() => setDeleteConfirm(null)}
@@ -387,15 +264,13 @@ export default function LibrariesPage() {
           description={
             <>
               Are you sure you want to delete the{" "}
-              <span className="font-semibold text-foreground">
-                "{deleteConfirm.name}"
-              </span>
-              ? This may break commands that depend on it.
+              <span className="font-semibold text-foreground">"{deleteConfirm.name}"</span>? This may break commands that
+              depend on it.
             </>
           }
           confirmText="Delete"
         />
       )}
-    </div>
+    </main>
   )
 }

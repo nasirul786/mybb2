@@ -1,4 +1,3 @@
-// app/app/bots/[id]/admin-panel/page.tsx
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -10,23 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AdminPanelForm } from "@/components/admin-panel-form"
 import { useToast } from "@/components/ui/use-toast"
 import {
-  Terminal, Wrench, MessageSquare, Settings, Package, Folder, Megaphone, AlertTriangle, LayoutDashboard,
-  Loader2, Save, Settings as DefaultIcon, ArrowLeft
+  LayoutDashboard,
+  Loader2,
+  Save,
+  Settings as DefaultIcon,
+  ArrowLeft,
 } from "lucide-react"
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false })
-
-const TABS = [
-  { id: "commands", label: "Commands", icon: Terminal },
-  { id: "tools", label: "Tools", icon: Wrench },
-  { id: "chats", label: "Chats", icon: MessageSquare },
-  { id: "properties", label: "Properties", icon: Settings },
-  { id: "libraries", label: "Libraries", icon: Package },
-  { id: "folders", label: "Folders", icon: Folder },
-  { id: "admin-panel", label: "Admin Panel", icon: LayoutDashboard },
-  { id: "broadcast", label: "Broadcast", icon: Megaphone },
-  { id: "errors", label: "Errors", icon: AlertTriangle },
-]
 
 type AdminField = {
   name: string
@@ -61,13 +51,13 @@ type ActiveOption = {
 }
 
 const iconMap: { [key: string]: React.ElementType } = {
-  "chatbubble": LayoutDashboard,
-  "key": LayoutDashboard,
-  "people": LayoutDashboard,
-  "pricetag": LayoutDashboard,
-  "power": LayoutDashboard,
+  chatbubble: LayoutDashboard,
+  key: LayoutDashboard,
+  people: LayoutDashboard,
+  pricetag: LayoutDashboard,
+  power: LayoutDashboard,
   "document-text": LayoutDashboard,
-  "settings": DefaultIcon,
+  settings: DefaultIcon,
 }
 
 const BASE_URL = "https://appapi.bots.business/v2"
@@ -77,18 +67,17 @@ async function fetchAdminPanels(botId: string, apiKey: string): Promise<ActiveOp
     const url = `${BASE_URL}/bots/${botId}/active_options?api_key=${apiKey}`
     const res = await fetch(url)
     if (!res.ok) throw new Error(`Failed to fetch admin panels: ${res.statusText}`)
-    const data = await res.json() as any[]
-
+    const data = (await res.json()) as any[]
     const validPanels: ActiveOption[] = []
     for (const item of data) {
-      if (item.type === 'active_option' && typeof item.value === 'string') {
+      if (item.type === "active_option" && typeof item.value === "string") {
         try {
           const parsedValue = JSON.parse(item.value) as AdminPanelValue
           if (parsedValue && Array.isArray(parsedValue.fields)) {
             validPanels.push({ ...item, value: parsedValue })
           }
         } catch (_) {}
-      } else if (item.type === 'active_option' && item.value && Array.isArray((item.value as AdminPanelValue).fields)) {
+      } else if (item.type === "active_option" && item.value && Array.isArray((item.value as AdminPanelValue).fields)) {
         validPanels.push(item as ActiveOption)
       }
     }
@@ -114,11 +103,17 @@ async function saveAdminPanel(
     })
     const responseData = await res.json()
     if (!res.ok) {
-      const errorMessage = Array.isArray(responseData.errors) ? responseData.errors[0] : (responseData.error || "Failed to save admin panel")
+      const errorMessage = Array.isArray(responseData.errors)
+        ? responseData.errors[0]
+        : responseData.error || "Failed to save admin panel"
       throw new Error(errorMessage)
     }
-    if (responseData.value && typeof responseData.value === 'string') {
-      try { responseData.value = JSON.parse(responseData.value) } catch { throw new Error("Invalid response data after saving.") }
+    if (responseData.value && typeof responseData.value === "string") {
+      try {
+        responseData.value = JSON.parse(responseData.value)
+      } catch {
+        throw new Error("Invalid response data after saving.")
+      }
     }
     return { success: true, data: responseData as ActiveOption }
   } catch (e) {
@@ -150,13 +145,11 @@ export default function AdminPanelPage() {
       setSelectedPanelId(panelId)
     }
     updatePanelIdFromHash()
-    window.addEventListener('hashchange', updatePanelIdFromHash)
-    return () => window.removeEventListener('hashchange', updatePanelIdFromHash)
+    window.addEventListener("hashchange", updatePanelIdFromHash)
+    return () => window.removeEventListener("hashchange", updatePanelIdFromHash)
   }, [])
 
-  const selectedPanel = useMemo(() => {
-    return panels.find(p => p.id === selectedPanelId)
-  }, [panels, selectedPanelId])
+  const selectedPanel = useMemo(() => panels.find((p) => p.id === selectedPanelId), [panels, selectedPanelId])
 
   useEffect(() => {
     if (selectedPanel) {
@@ -196,7 +189,6 @@ export default function AdminPanelPage() {
     })
     setPanels(fetchedPanels)
     setIsLoading(false)
-
     const hash = window.location.hash
     const match = hash.match(/^#panel-(\d+)$/)
     const panelId = match ? parseInt(match[1], 10) : null
@@ -204,9 +196,9 @@ export default function AdminPanelPage() {
   }
 
   const handleFieldChange = (fieldName: string, value: any) => {
-    setCurrentEditData(prevData => {
+    setCurrentEditData((prevData) => {
       if (!prevData) return null
-      const newFields = prevData.fields.map(field =>
+      const newFields = prevData.fields.map((field) =>
         field.name === fieldName ? { ...field, value } : field
       )
       return { ...prevData, fields: newFields }
@@ -217,15 +209,18 @@ export default function AdminPanelPage() {
     if (!apiKey || !selectedPanelId || !currentEditData) return
     setIsSaving(true)
     const result = await saveAdminPanel(botId, selectedPanelId, currentEditData, apiKey)
-
     if (result.success && result.data) {
-      setPanels(prevPanels => prevPanels.map(panel =>
-        panel.id === selectedPanelId ? result.data! : panel
-      ))
+      setPanels((prevPanels) =>
+        prevPanels.map((panel) => (panel.id === selectedPanelId ? result.data! : panel))
+      )
       setCurrentEditData(JSON.parse(JSON.stringify(result.data.value)))
       toast({ title: "Success", description: "Admin panel configuration saved." })
     } else {
-      toast({ variant: "destructive", title: "Save Failed", description: result.error || "Could not save configuration." })
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: result.error || "Could not save configuration.",
+      })
     }
     setIsSaving(false)
   }
@@ -240,41 +235,22 @@ export default function AdminPanelPage() {
   const panelValue = selectedPanel?.value as AdminPanelValue | undefined
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="sticky top-0 z-20 border-b bg-card/60 backdrop-blur-xl">
-        <div className="flex gap-1 p-2 overflow-x-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <Button
-                key={tab.id}
-                onClick={() => { router.push(`/app/bots/${botId}/${tab.id}`) }}
-                variant={tab.id === "admin-panel" ? "default" : "outline"}
-                size="sm"
-                className="gap-2 cursor-pointer whitespace-nowrap"
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </Button>
-            )
-          })}
-        </div>
-      </div>
-
+    // Full-bleed layout, no local tabs, unified spacing
+    <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h2 className="text-3xl font-bold">Admin Panel</h2>
           {panels.length > 1 && !selectedPanelId && (
             <Select
               value={""}
-              onValueChange={(idStr) => window.location.hash = `#panel-${idStr}`}
+              onValueChange={(idStr) => (window.location.hash = `#panel-${idStr}`)}
               disabled={isLoading}
             >
               <SelectTrigger className="w-full sm:w-[250px]">
                 <SelectValue placeholder="Select a panel to edit..." />
               </SelectTrigger>
               <SelectContent>
-                {panels.map(panel => (
+                {panels.map((panel) => (
                   <SelectItem key={panel.id} value={panel.id.toString()}>
                     {(panel.value as AdminPanelValue).title || `Panel ${panel.id}`}
                   </SelectItem>
@@ -297,7 +273,12 @@ export default function AdminPanelPage() {
                   <p className="text-sm text-muted-foreground mt-1">{panelValue.description}</p>
                 )}
               </div>
-              <Button variant="outline" size="sm" onClick={closePanel} className="gap-1.5 hidden sm:flex">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={closePanel}
+                className="gap-1.5 hidden sm:flex"
+              >
                 <ArrowLeft className="w-4 h-4" /> Back to Panels
               </Button>
             </div>
@@ -309,9 +290,19 @@ export default function AdminPanelPage() {
             />
 
             <div className="mt-8 pt-6 border-t flex justify-center">
-              <Button onClick={handleSaveChanges} disabled={isSaving} className="w-full sm:w-auto sm:min-w-[150px]">
-                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                {isSaving ? "Saving..." : (panelValue.button_title || "Save Changes")}
+              <Button
+                onClick={handleSaveChanges}
+                disabled={isSaving}
+                className="w-full sm:w-auto sm:min-w-[150px]"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {isSaving
+                  ? "Saving..."
+                  : panelValue.button_title || "Save Changes"}
               </Button>
             </div>
           </div>
@@ -319,17 +310,30 @@ export default function AdminPanelPage() {
           <div className="flex flex-col items-center justify-center text-center py-10 px-6">
             {emptyAnimationData ? (
               <div className="w-64 h-64 mx-auto mb-4">
-                <Lottie animationData={emptyAnimationData} loop autoplay className="w-full h-full" style={{ background: "transparent" }} />
+                <Lottie
+                  animationData={emptyAnimationData}
+                  loop
+                  autoplay
+                  className="w-full h-full"
+                  style={{ background: "transparent" }}
+                />
               </div>
-            ) : (<LayoutDashboard className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />)}
-            <h2 className="text-xl font-semibold mt-2 mb-1">No Admin Panel Configured</h2>
-            <p className="text-muted-foreground max-w-xs">This bot doesn't have an admin panel set up yet.</p>
+            ) : (
+              <LayoutDashboard className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+            )}
+            <h2 className="text-xl font-semibold mt-2 mb-1">
+              No Admin Panel Configured
+            </h2>
+            <p className="text-muted-foreground max-w-xs">
+              This bot doesn't have an admin panel set up yet.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {panels.map(panel => {
+            {panels.map((panel) => {
               const panelInfo = panel.value as AdminPanelValue
-              const IconComponent = iconMap[panelInfo.icon || 'settings'] || DefaultIcon
+              const IconComponent =
+                iconMap[panelInfo.icon || "settings"] || DefaultIcon
               return (
                 <Card
                   key={panel.id}
@@ -341,8 +345,14 @@ export default function AdminPanelPage() {
                   <CardHeader className="flex flex-row items-center gap-4 space-y-0">
                     <IconComponent className="w-6 h-6 text-primary flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-lg truncate">{panelInfo.title}</CardTitle>
-                      {panelInfo.description && <CardDescription className="text-xs mt-1 line-clamp-2">{panelInfo.description}</CardDescription>}
+                      <CardTitle className="text-lg truncate">
+                        {panelInfo.title}
+                      </CardTitle>
+                      {panelInfo.description && (
+                        <CardDescription className="text-xs mt-1 line-clamp-2">
+                          {panelInfo.description}
+                        </CardDescription>
+                      )}
                     </div>
                   </CardHeader>
                 </Card>
@@ -351,6 +361,6 @@ export default function AdminPanelPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   )
 }

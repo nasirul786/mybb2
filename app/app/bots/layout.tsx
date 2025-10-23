@@ -31,7 +31,7 @@ export default function BotsLayout({ children }: { children: ReactNode }) {
       <AppSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex flex-col flex-1">
         <AppHeader onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 p-6 space-y-8">{children}</main>
+        <main className="flex-1 p-6 space-y-8 overflow-x-hidden">{children}</main>
       </div>
     </div>
   )
