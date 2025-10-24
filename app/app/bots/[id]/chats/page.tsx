@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChatListItem } from "@/components/chat-list-item"
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
 import { Loader2, Search, X, Ban, CheckCircle } from "lucide-react"
+
 
 type User = {
   id: number
@@ -42,15 +43,40 @@ export type Chat = {
 type SortOption = "name_asc" | "name_desc" | "joined_asc" | "joined_desc"
 type FilterStatus = "all" | "blocked" | "unblocked"
 
-const BASE_URL = "https://appapi.bots.business/v2"
 
-async function fetchChats(botId: string, apiKey: string): Promise<Chat[]> {
-  try {
-    const url = `${BASE_URL}/bots/${botId}/chats?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch chats: ${res.statusText}`)
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
     }
+    throw new Error("Unauthorized")
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchChats(botId: string): Promise<Chat[]> {
+  try {
+    const res = await apiFetch(`/bots/${botId}/chats`)
     return (await res.json()) as Chat[]
   } catch (e) {
     console.error("[fetchChats] Error:", e)
@@ -61,24 +87,18 @@ async function fetchChats(botId: string, apiKey: string): Promise<Chat[]> {
 async function updateChatStatus(
   botId: string,
   chatId: number,
-  block: boolean,
-  apiKey: string
+  block: boolean
 ): Promise<{ success: boolean; updatedChat?: Chat; error?: string }> {
   const action = block ? "block" : "unblock"
-  const url = `${BASE_URL}/bots/${botId}/chats/${chatId}/${action}?api_key=${apiKey}`
   try {
-    const res = await fetch(url, { method: "POST" })
+    const res = await apiFetch(`/bots/${botId}/chats/${chatId}/${action}`, {
+      method: "POST",
+    })
     const data = await res.json()
-    if (!res.ok) {
-      throw new Error(data.error || `Failed to ${action} chat`)
-    }
 
+   
     const expectedBlockedStatus = block
-    const actualBlockedStatus = data.prohibited_by_admin === true
-    if (actualBlockedStatus !== expectedBlockedStatus) {
-      console.warn(`API response for ${action} might not reflect the change immediately.`, data)
-      data.prohibited_by_admin = expectedBlockedStatus
-    }
+    data.prohibited_by_admin = expectedBlockedStatus
 
     return { success: true, updatedChat: data as Chat }
   } catch (e) {
@@ -86,6 +106,8 @@ async function updateChatStatus(
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
+
+
 
 export default function ChatsPage() {
   const params = useParams()
@@ -102,15 +124,18 @@ export default function ChatsPage() {
 
   const searchRef = useRef<HTMLInputElement | null>(null)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
+
+  const loadChats = useCallback(async () => {
+    if (!botId) return
+    setIsLoading(true)
+    const fetchedChats = await fetchChats(botId)
+    setChats(fetchedChats)
+    setIsLoading(false)
+  }, [botId])
 
   useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
     loadChats()
-  }, [botId, apiKey])
+  }, [loadChats])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -122,14 +147,6 @@ export default function ChatsPage() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
-
-  const loadChats = async () => {
-    if (!apiKey) return
-    if (!isLoading) setIsLoading(true)
-    const fetchedChats = await fetchChats(botId, apiKey)
-    setChats(fetchedChats)
-    setIsLoading(false)
-  }
 
   const filteredAndSortedChats = useMemo(() => {
     let result = chats
@@ -180,26 +197,25 @@ export default function ChatsPage() {
   const handleUpdateRequest = (chat: Chat) => setBlockConfirm(chat)
 
   const handleConfirmBlockUnblock = async () => {
-    if (!apiKey || !blockConfirm) return
+    if (!blockConfirm) return 
 
     const chatToUpdate = blockConfirm
     const shouldBlock = !(chatToUpdate.prohibited_by_admin === true)
 
     setIsUpdatingStatus(true)
-    const result = await updateChatStatus(botId, chatToUpdate.id, shouldBlock, apiKey)
+    const result = await updateChatStatus(botId, chatToUpdate.id, shouldBlock)
 
     if (result.success && result.updatedChat) {
       setChats((prev) => prev.map((chat) => (chat.id === chatToUpdate.id ? result.updatedChat! : chat)))
       setBlockConfirm(null)
-      await loadChats()
     } else {
       alert(`Failed to ${shouldBlock ? "block" : "unblock"} chat: ${result.error}`)
     }
     setIsUpdatingStatus(false)
   }
 
+  
   return (
-    // full-bleed page; tabs come from layout
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25 sm:pt-25">
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-4">

@@ -5,6 +5,8 @@ import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
 import { useRouter } from "next/navigation"
 
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+
 export default function BotsLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
@@ -20,7 +22,7 @@ export default function BotsLayout({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const apiKey = localStorage.getItem("mybb_api_key")
+    const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY)
     if (!apiKey) {
       router.push("/app")
     }

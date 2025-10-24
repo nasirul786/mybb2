@@ -15,6 +15,11 @@ import {
   deleteCommand,
 } from "@/lib/commands-api"
 
+// -------- ENV CONFIG --------
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (path: string) => `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`
+
 const normalizeCommandAliases = (cmd: Command): Command => {
   if (Array.isArray(cmd.aliases)) {
     return { ...cmd, aliases: (cmd.aliases as any[]).map((a: any) => a.command) }
@@ -37,7 +42,7 @@ export default function CommandsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Command | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem(process.NEXT_PUBLIC_API_KEY_STORAGE_KE) : null
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
 
   useEffect(() => {
     loadData()
@@ -80,7 +85,7 @@ export default function CommandsPage() {
       const all: Command[] = []
       let page = 1
       while (true) {
-        const url = `${process.env.NEXT_PUBLIC_API_URL}/${botId}/commands?page=${page}&api_key=${apiKey}`
+        const url = apiUrl(`bots/${botId}/commands?page=${page}&api_key=${encodeURIComponent(apiKey)}`)
         const r = await fetch(url)
         if (!r.ok) throw new Error("Failed to fetch commands")
         const batch: Command[] = await r.json()

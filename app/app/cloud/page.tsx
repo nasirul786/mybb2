@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,7 +17,9 @@ import {
   ArrowRight,
 } from "lucide-react"
 
-const BASE_API = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
 type CloudPlan = {
   name: string
@@ -26,10 +28,27 @@ type CloudPlan = {
   description: string
 }
 
-async function apiGet(url: string) {
-  const r = await fetch(url)
-  const d = await r.json().catch(() => null)
-  return { ok: r.ok, data: d as any, status: r.status }
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
 }
 
 export default function CloudPage() {
@@ -40,25 +59,32 @@ export default function CloudPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    ;(async () => {
-      setLoading(true)
-      setError(null)
-      const res = await apiGet(`${BASE_API}/clouds`)
-      if (!res.ok) {
-        setError(res.data?.error || `HTTP ${res.status}`)
-        toast({
-          variant: "destructive",
-          title: "Failed to load plans",
-          description: res.data?.error || `HTTP ${res.status}`,
-        })
-        setPlans([])
-      } else {
-        setPlans(Array.isArray(res.data) ? res.data : [])
+  const loadPlans = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await apiFetch("/clouds")
+      const data = await res.json()
+      setPlans(Array.isArray(data) ? data : [])
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e)
+      if (errorMsg === "Unauthorized" || errorMsg === "No API key") {
+        return
       }
-      setLoading(false)
-    })()
+      setError(errorMsg)
+      toast({
+        variant: "destructive",
+        title: "Failed to load plans",
+        description: errorMsg,
+      })
+      setPlans([])
+    }
+    setLoading(false)
   }, [toast])
+
+  useEffect(() => {
+    loadPlans()
+  }, [loadPlans])
 
   const pretty = (n: number) =>
     Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n)
@@ -91,7 +117,6 @@ export default function CloudPage() {
             </div>
           </div>
 
-          {/* Plans */}
           <section>
             {loading ? (
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -169,7 +194,6 @@ export default function CloudPage() {
             )}
           </section>
 
-          {/* Info sections */}
           <section className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>

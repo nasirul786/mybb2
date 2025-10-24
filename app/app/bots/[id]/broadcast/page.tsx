@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import dynamic from "next/dynamic"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -34,13 +34,41 @@ export type BroadcastTask = {
   status: string
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchBroadcastTasks(botId: string, apiKey: string): Promise<BroadcastTask[]> {
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+
+  if (options.method === "DELETE" && res.status === 204) {
+    return res
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchBroadcastTasks(botId: string): Promise<BroadcastTask[]> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/broadcaster_tasks?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch broadcast tasks: ${res.statusText}`)
+    const res = await apiFetch(`/bots/${botId}/broadcaster_tasks`)
     return (await res.json()) as BroadcastTask[]
   } catch (e) {
     console.error("[fetchBroadcastTasks] Error:", e)
@@ -48,15 +76,12 @@ async function fetchBroadcastTasks(botId: string, apiKey: string): Promise<Broad
   }
 }
 
-async function pauseTask(botId: string, taskId: number, apiKey: string): Promise<{ success: boolean; message?: string; error?: string }> {
+async function pauseTask(botId: string, taskId: number): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/broadcaster_tasks/${taskId}/pause?api_key=${apiKey}`
-    const res = await fetch(url, { method: "POST" })
+    const res = await apiFetch(`/bots/${botId}/broadcaster_tasks/${taskId}/pause`, {
+      method: "POST",
+    })
     const data = await res.json()
-    if (!res.ok) {
-      const errorMessage = Array.isArray(data.errors) ? data.errors.join(", ") : data.error || "Failed to pause task"
-      throw new Error(errorMessage)
-    }
     return { success: true, message: data.message }
   } catch (e) {
     console.error("[pauseTask] Error:", e)
@@ -64,15 +89,12 @@ async function pauseTask(botId: string, taskId: number, apiKey: string): Promise
   }
 }
 
-async function resumeTask(botId: string, taskId: number, apiKey: string): Promise<{ success: boolean; message?: string; error?: string }> {
+async function resumeTask(botId: string, taskId: number): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/broadcaster_tasks/${taskId}/resume?api_key=${apiKey}`
-    const res = await fetch(url, { method: "POST" })
+    const res = await apiFetch(`/bots/${botId}/broadcaster_tasks/${taskId}/resume`, {
+      method: "POST",
+    })
     const data = await res.json()
-    if (!res.ok) {
-      const errorMessage = Array.isArray(data.errors) ? data.errors.join(", ") : data.error || "Failed to resume task"
-      throw new Error(errorMessage)
-    }
     return { success: true, message: data.message }
   } catch (e) {
     console.error("[resumeTask] Error:", e)
@@ -80,16 +102,13 @@ async function resumeTask(botId: string, taskId: number, apiKey: string): Promis
   }
 }
 
-async function deleteTask(botId: string, taskId: number, apiKey: string): Promise<{ success: boolean; message?: string; error?: string }> {
+async function deleteTask(botId: string, taskId: number): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/broadcaster_tasks/${taskId}?api_key=${apiKey}`
-    const res = await fetch(url, { method: "DELETE" })
+    const res = await apiFetch(`/bots/${botId}/broadcaster_tasks/${taskId}`, {
+      method: "DELETE",
+    })
     if (res.status === 204) return { success: true, message: "Task deleted successfully" }
     const data = await res.json()
-    if (!res.ok) {
-      const errorMessage = Array.isArray(data.errors) ? data.errors.join(", ") : data.error || "Failed to delete task"
-      throw new Error(errorMessage)
-    }
     return { success: true, message: data.message }
   } catch (e) {
     console.error("[deleteTask] Error:", e)
@@ -108,15 +127,17 @@ export default function BroadcastPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [emptyAnimationData, setEmptyAnimationData] = useState<any>(null)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
+  const loadTasks = useCallback(async () => {
+    if (!botId) return
+    setIsLoading(true)
+    const fetchedTasks = await fetchBroadcastTasks(botId)
+    setTasks(fetchedTasks)
+    setIsLoading(false)
+  }, [botId])
 
   useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
     loadTasks()
-  }, [botId, apiKey])
+  }, [loadTasks])
 
   useEffect(() => {
     fetch("/lottie/empty-bots.json")
@@ -125,24 +146,14 @@ export default function BroadcastPage() {
       .catch(() => {})
   }, [])
 
-  const loadTasks = async () => {
-    if (!apiKey) return
-    if (!isLoading) setIsLoading(true)
-    const fetchedTasks = await fetchBroadcastTasks(botId, apiKey)
-    setTasks(fetchedTasks)
-    setIsLoading(false)
-  }
-
   const handleToggleStatus = async (taskId: number, currentStatus: string): Promise<boolean> => {
-    if (!apiKey) return false
-
     const statusLower = currentStatus?.toLowerCase()
     const isPausable = ["running", "active", "new", "in progress"].includes(statusLower)
     const action = isPausable ? pauseTask : resumeTask
     const actionName = isPausable ? "pause" : "resume"
     const actionGerund = isPausable ? "Pausing" : "Resuming"
 
-    const result = await action(botId, taskId, apiKey)
+    const result = await action(botId, taskId)
 
     if (result.success) {
       toast({ title: "Success", description: result.message || `Task ${actionName}d.` })
@@ -165,9 +176,9 @@ export default function BroadcastPage() {
   }
 
   const handleConfirmDelete = async () => {
-    if (!apiKey || !deleteConfirm) return
+    if (!deleteConfirm) return
     setIsDeleting(true)
-    const result = await deleteTask(botId, deleteConfirm.id, apiKey)
+    const result = await deleteTask(botId, deleteConfirm.id)
     if (result.success) {
       setTasks((prev) => prev.filter((t) => t.id !== deleteConfirm.id))
       toast({ title: "Success", description: result.message || "Broadcast task deleted." })
@@ -184,7 +195,6 @@ export default function BroadcastPage() {
   }
 
   return (
-    // Full layout (no local tabs) and consistent top padding
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="flex items-center justify-between gap-4 mb-6">
@@ -234,8 +244,8 @@ export default function BroadcastPage() {
           title="Delete Broadcast Task?"
           description={
             <>
-              Are you sure you want to delete this broadcast task (ID: {deleteConfirm.id})?
-              If it's running, it might stop abruptly. This action cannot be undone.
+              Are you sure you want to delete this broadcast task (ID: {deleteConfirm.id})? If it's running, it might
+              stop abruptly. This action cannot be undone.
             </>
           }
           confirmText="Delete Task"

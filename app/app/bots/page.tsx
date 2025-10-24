@@ -29,6 +29,11 @@ interface FilterState {
   status?: "works" | "stopped"
 }
 
+// -------- ENV CONFIG --------
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (path: string) => `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`
+
 export default function BotsPage() {
   const router = useRouter()
   const [apiKey, setApiKey] = useState("")
@@ -37,10 +42,10 @@ export default function BotsPage() {
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [filters, setFilters] = useState<FilterState>({})
   const [bots, setBots] = useState<Bot[]>([])
-  const [emptyAnimationData, setEmptyAnimationData] = useState(null)
+  const [emptyAnimationData, setEmptyAnimationData] = useState<any>(null)
 
   useEffect(() => {
-    const storedApiKey = localStorage.getItem(process.NEXT_PUBLIC_API_KEY_STORAGE_KE)
+    const storedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY)
     if (!storedApiKey) {
       router.push("/app")
       return
@@ -56,22 +61,18 @@ export default function BotsPage() {
       .catch(error => console.error('Error loading Lottie animation:', error))
   }, [])
 
-  const {
-    data: botsData,
-    isLoading,
-    mutate,
-  } = useSWR(
-    apiKey ? `${process.env.NEXT_PUBLIC_API_URL}/bots?api_key=${apiKey}` : null,
-    async (url) => {
+  const { data: botsData, isLoading, mutate } = useSWR(
+    apiKey ? apiUrl(`/bots?api_key=${encodeURIComponent(apiKey)}`) : null,
+    async (url: string) => {
       const response = await fetch(url)
       if (!response.ok) throw new Error("Failed to fetch bots")
       const data = await response.json()
       return data
     },
-    { 
+    {
       revalidateOnFocus: false,
-      errorRetryCount: 3 
-    },
+      errorRetryCount: 3,
+    }
   )
 
   useEffect(() => {
@@ -91,34 +92,35 @@ export default function BotsPage() {
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
 
-  const filteredBots = bots
-    ?.filter((bot) => {
-      if (searchQuery && !bot.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false
-      }
-      if (filters.status && bot.status !== filters.status) {
-        return false
-      }
-      return true
-    })
-    .sort((a, b) => {
-      if (filters.name) {
-        return filters.name === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
-      }
-      if (filters.creation) {
-        const aDate = new Date(a.created_at).getTime()
-        const bDate = new Date(b.created_at).getTime()
-        return filters.creation === "asc" ? aDate - bDate : bDate - aDate
-      }
-      if (filters.update) {
-        const aDate = new Date(a.updated_at).getTime()
-        const bDate = new Date(b.updated_at).getTime()
-        return filters.update === "asc" ? aDate - bDate : bDate - aDate
-      }
-      return 0
-    }) || []
+  const filteredBots =
+    bots
+      ?.filter((bot) => {
+        if (searchQuery && !bot.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+          return false
+        }
+        if (filters.status && bot.status !== filters.status) {
+          return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        if (filters.name) {
+          return filters.name === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+        }
+        if (filters.creation) {
+          const aDate = new Date(a.created_at).getTime()
+          const bDate = new Date(b.created_at).getTime()
+          return filters.creation === "asc" ? aDate - bDate : bDate - aDate
+        }
+        if (filters.update) {
+          const aDate = new Date(a.updated_at).getTime()
+          const bDate = new Date(b.updated_at).getTime()
+          return filters.update === "asc" ? aDate - bDate : bDate - aDate
+        }
+        return 0
+      }) || []
 
-  const runningBotsCount = bots.filter(bot => bot.status === "works").length
+  const runningBotsCount = bots.filter((bot) => bot.status === "works").length
   const totalBotsCount = bots.length
 
   const handleBotCreated = () => {
@@ -134,38 +136,26 @@ export default function BotsPage() {
     <Card className="p-4 text-center border-muted hover:border-primary/50 transition-colors duration-300 bg-card/50">
       <CardContent className="flex flex-col items-center justify-center space-y-6 p-6">
         {emptyAnimationData ? (
-          <div className="w-64 h-64 mx-auto -mb-8 -mt-4">
-            <Lottie 
-              animationData={emptyAnimationData} 
-              loop={true}
-              className="w-full h-full"
-              autoplay={true}
-              style={{ background: 'transparent' }}
-            />
+          <div className="w-64 h-64 mx-auto mb-8 mt-4">
+            <Lottie animationData={emptyAnimationData} loop autoplay className="w-full h-full" style={{ background: 'transparent' }} />
           </div>
         ) : (
           <div className="w-24 h-24 rounded-full bg-muted/50 flex items-center justify-center mb-4 border border-border">
             <Bot className="w-12 h-12 text-muted-foreground" />
           </div>
         )}
-        
+
         <div className="space-y-3">
-          <h3 className="text-2xl font-bold text-foreground">
-            {bots.length === 0 ? "No bots yet" : "No bots found"}
-          </h3>
+          <h3 className="text-2xl font-bold text-foreground">{bots.length === 0 ? "No bots yet" : "No bots found"}</h3>
           <p className="text-muted-foreground max-w-sm text-lg">
-            {bots.length === 0 
-              ? "Get started by creating your first Telegram bot to automate your tasks." 
-              : "Try adjusting your search or filters to find what you're looking for."
-            }
+            {bots.length === 0
+              ? "Get started by creating your first Telegram bot to automate your tasks."
+              : "Try adjusting your search or filters to find what you're looking for."}
           </p>
         </div>
-        
+
         {bots.length === 0 && (
-          <Button 
-            onClick={() => setShowCreateModal(true)} 
-            className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2 mt-4 px-6 py-3 h-auto text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-200"
-          >
+          <Button onClick={() => setShowCreateModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2 mt-4 px-6 py-3 h-auto text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-200">
             <Plus className="w-5 h-5" />
             Create Your First Bot
           </Button>
@@ -179,15 +169,10 @@ export default function BotsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center justify-between">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Your Bots
-          </h1>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Your Bots</h1>
           <p className="text-muted-foreground text-lg">Manage and control your Telegram bots</p>
         </div>
-        <Button 
-          onClick={() => setShowCreateModal(true)} 
-          className="bg-primary hover:bg-primary/90 text-primary-foreground gap-3 shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-200 px-6 py-3 h-auto text-base font-semibold"
-        >
+        <Button onClick={() => setShowCreateModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground gap-3 shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-200 px-6 py-3 h-auto text-base font-semibold">
           <Plus className="w-5 h-5" />
           New Bot
         </Button>
@@ -205,24 +190,15 @@ export default function BotsPage() {
             className="pl-12 pr-12 py-3 h-10 bg-card focus:border-primary transition-colors duration-200 rounded-xl focus:ring-2 focus:ring-primary/20 text-base"
           />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center bg-muted hover:bg-muted-foreground/20 rounded-full transition-colors duration-200"
-            >
+            <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center bg-muted hover:bg-muted-foreground/20 rounded-full transition-colors duration-200">
               <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
             </button>
           )}
         </div>
-        <Button 
-          variant="outline" 
-          onClick={() => setShowFilterModal(true)} 
-          className="gap-3 h-10 border-2 border-border hover:border-primary/50 hover:bg-accent/50 transition-colors duration-200 px-6 text-base font-medium rounded-xl"
-        >
+        <Button variant="outline" onClick={() => setShowFilterModal(true)} className="gap-3 h-10 border-2 border-border hover:border-primary/50 hover:bg-accent/50 transition-colors duration-200 px-6 text-base font-medium rounded-xl">
           <Filter className="w-5 h-5" />
           Filter
-          {Object.keys(filters).length > 0 && (
-            <span className="flex h-2 w-2 rounded-full bg-primary ml-1" />
-          )}
+          {Object.keys(filters).length > 0 && <span className="flex h-2 w-2 rounded-full bg-primary ml-1" />}
         </Button>
       </div>
 
@@ -231,14 +207,14 @@ export default function BotsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-4 text-sm">
             <p className="text-muted-foreground">
-              Total: <span className="font-semibold text-foreground">{totalBotsCount}</span> bot{totalBotsCount !== 1 ? 's' : ''}
+              Total: <span className="font-semibold text-foreground">{totalBotsCount}</span> bot{totalBotsCount !== 1 ? "s" : ""}
             </p>
             <p className="text-muted-foreground">
-              Running: <span className="font-semibold text-green-600 dark:text-green-400">{runningBotsCount}</span> bot{runningBotsCount !== 1 ? 's' : ''}
+              Running: <span className="font-semibold text-green-600 dark:text-green-400">{runningBotsCount}</span> bot{runningBotsCount !== 1 ? "s" : ""}
             </p>
             {searchQuery && (
               <p className="text-muted-foreground">
-                Found: <span className="font-semibold text-foreground">{filteredBots.length}</span> bot{filteredBots.length !== 1 ? 's' : ''}
+                Found: <span className="font-semibold text-foreground">{filteredBots.length}</span> bot{filteredBots.length !== 1 ? "s" : ""}
               </p>
             )}
           </div>
@@ -276,17 +252,9 @@ export default function BotsPage() {
       )}
 
       {/* Modals */}
-      {showCreateModal && (
-        <CreateBotModal apiKey={apiKey} onClose={() => setShowCreateModal(false)} onSuccess={handleBotCreated} />
-      )}
+      {showCreateModal && <CreateBotModal apiKey={apiKey} onClose={() => setShowCreateModal(false)} onSuccess={handleBotCreated} />}
 
-      {showFilterModal && (
-        <FilterModal 
-          filters={filters} 
-          onFiltersChange={setFilters} 
-          onClose={() => setShowFilterModal(false)} 
-        />
-      )}
+      {showFilterModal && <FilterModal filters={filters} onFiltersChange={setFilters} onClose={() => setShowFilterModal(false)} />}
     </div>
   )
 }

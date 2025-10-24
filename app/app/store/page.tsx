@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useRef } from "react"
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import dynamic from "next/dynamic"
@@ -41,6 +41,35 @@ type Collection = {
   five_store_bots: StoreBot[]
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+const swrFetcher = (path: string) => apiFetch(path).then((res) => res.json())
+
 export default function StorePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [apiKey, setApiKey] = useState<string>("")
@@ -63,7 +92,7 @@ export default function StorePage() {
 
   useEffect(() => {
     try {
-      const k = localStorage.getItem("mybb_api_key")
+      const k = localStorage.getItem(API_KEY_STORAGE_KEY)
       if (!k) {
         window.location.href = "/app"
         return
@@ -99,12 +128,8 @@ export default function StorePage() {
   }, [])
 
   const { data, isLoading, error } = useSWR<Collection[]>(
-    apiKey ? `https://appapi.bots.business/v2/store/collections?api_key=${encodeURIComponent(apiKey)}` : null,
-    async (url: string) => {
-      const res = await fetch(url, { cache: "no-store" })
-      if (!res.ok) throw new Error(`Failed to fetch collections: ${res.status}`)
-      return res.json()
-    },
+    apiKey ? `/store/collections` : null,
+    swrFetcher,
     { revalidateOnFocus: false, errorRetryCount: 2 }
   )
 
@@ -130,12 +155,11 @@ export default function StorePage() {
     }
     setInstallingBotId(bot.id)
     try {
-      const url = `https://appapi.bots.business/v2/store/bots/${bot.id}/install?api_key=${encodeURIComponent(apiKey)}`
-      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
-      if (!res.ok) {
-        const msg = await safeText(res)
-        throw new Error(msg || `Install failed: ${res.status}`)
-      }
+      const res = await apiFetch(`/store/bots/${bot.id}/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      })
       const installed = await res.json()
       setInstalledBotId(installed.id)
       setShowInstalledModal(true)
@@ -174,7 +198,7 @@ export default function StorePage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary" />
             <Input
               ref={searchRef}
-              placeholder="Search bots, descriptions, repos…  (Ctrl/Cmd + K)"
+              placeholder="Search bots, descriptions, repos…  (Ctrl/Cmd + K)"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-9 pr-10 h-10 bg-card focus:ring-2 focus:ring-primary/20"
@@ -333,7 +357,13 @@ function EmptySearch({ emptyAnimationData, onClear }: { emptyAnimationData: any;
       <div className="flex flex-col items-center justify-center space-y-6">
         {emptyAnimationData ? (
           <div className="w-64 h-64 mx-auto -mb-2 -mt-2">
-            <Lottie animationData={emptyAnimationData} loop autoplay className="w-full h-full" style={{ background: "transparent" }} />
+            <Lottie
+              animationData={emptyAnimationData}
+              loop
+              autoplay
+              className="w-full h-full"
+              style={{ background: "transparent" }}
+            />
           </div>
         ) : (
           <Skeleton className="w-24 h-24 rounded-full" />
@@ -359,12 +389,4 @@ function LoadError() {
       <p className="text-destructive">Failed to load store collections. Retry later.</p>
     </Card>
   )
-}
-
-async function safeText(res: Response) {
-  try {
-    return await res.text()
-  } catch {
-    return ""
-  }
 }

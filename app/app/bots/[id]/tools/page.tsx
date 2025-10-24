@@ -8,31 +8,50 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
-import {
-  Loader2, Copy, Check, ExternalLink, GitBranch, UploadCloud, DownloadCloud, Copy as CopyIcon
-} from "lucide-react"
+import { Loader2, Copy, Check, ExternalLink, GitBranch, UploadCloud, DownloadCloud, Copy as CopyIcon } from "lucide-react"
 
 type BotDetails = {
-  id: number;
-  name: string;
-  token: string | null;
-  csv_url: string | null;
-  git_remote: string | null;
-  rsa_public_key: string | null;
-  status?: string;
-  created_at?: string;
-  updated_at?: string;
+  id: number
+  name: string
+  token: string | null
+  csv_url: string | null
+  git_remote: string | null
+  rsa_public_key: string | null
+  status?: string
+  created_at?: string
+  updated_at?: string
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchBotDetails(botId: string, apiKey: string): Promise<BotDetails | null> {
-  try {
-    const url = `${BASE_URL}/bots/${botId}?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch bot details: ${res.statusText}`)
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
     }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchBotDetails(botId: string): Promise<BotDetails | null> {
+  try {
+    const res = await apiFetch(`/bots/${botId}`)
     return (await res.json()) as BotDetails
   } catch (e) {
     console.error("[fetchBotDetails] Error:", e)
@@ -42,74 +61,46 @@ async function fetchBotDetails(botId: string, apiKey: string): Promise<BotDetail
 
 async function updateBotDetails(
   botId: string,
-  apiKey: string,
-  data: Partial<Pick<BotDetails, 'name' | 'token' | 'csv_url' | 'git_remote'>>
+  data: Partial<Pick<BotDetails, "name" | "token" | "csv_url" | "git_remote">>
 ): Promise<{ success: boolean; data?: BotDetails; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}?api_key=${apiKey}`
-    const res = await fetch(url, {
+    const res = await apiFetch(`/bots/${botId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     })
-    const responseData = await res.json()
-    if (!res.ok) {
-      throw new Error(responseData.error || "Failed to update bot details")
-    }
-    return { success: true, data: responseData as BotDetails }
+    const responseData = (await res.json()) as BotDetails
+    return { success: true, data: responseData }
   } catch (e) {
-    console.error("[updateBotDetails] Error:", e)
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
-async function cloneBot(botId: string, apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function cloneBot(botId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/cloning?api_key=${apiKey}`
-    const res = await fetch(url, { method: "POST" })
-    const responseText = await res.text()
-
-    if (!res.ok || responseText !== "ok") {
-      let errorMsg = "Cloning failed"
-      try {
-        const data = JSON.parse(responseText)
-        errorMsg = data.error || errorMsg
-      } catch {}
-      throw new Error(errorMsg)
-    }
+    const res = await apiFetch(`/bots/${botId}/cloning`, { method: "POST" })
+    const txt = await res.text()
+    if (txt !== "ok") throw new Error("Cloning failed")
     return { success: true }
   } catch (e) {
-    console.error("[cloneBot] Error:", e)
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
 async function triggerGitTask(
   botId: string,
-  apiKey: string,
   task: "git_import_tasks" | "git_export_tasks"
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/${task}?api_key=${apiKey}`
-    const res = await fetch(url, {
+    const res = await apiFetch(`/bots/${botId}/${task}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     })
-
-    const responseData = await res.json().catch(() => null)
-
-    if (!res.ok) {
-      throw new Error(responseData?.error || "Failed to trigger Git task")
-    }
-
-    if (responseData?.result === "ok") {
-      return { success: true, data: responseData }
-    }
-
-    throw new Error(responseData?.error || "Git task did not return 'ok'")
+    const data = await res.json().catch(() => null)
+    if (data?.result === "ok") return { success: true, data }
+    throw new Error(data?.error || "Task failed")
   } catch (e) {
-    console.error(`[triggerGitTask: ${task}] Error:`, e)
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
@@ -133,21 +124,14 @@ export default function ToolsPage() {
   const [showGitImportConfirm, setShowGitImportConfirm] = useState(false)
   const [copiedKey, setCopiedKey] = useState(false)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
-
   const showToast = (message: string, duration = 2000) => {
     setToast(message)
     setTimeout(() => setToast(null), duration)
   }
 
   const loadBotDetails = useCallback(async () => {
-    if (!apiKey) {
-      setIsLoading(false)
-      showToast("API Key Error: Not found.", 3000)
-      return
-    }
     setIsLoading(true)
-    const details = await fetchBotDetails(botId, apiKey)
+    const details = await fetchBotDetails(botId)
     if (details) {
       setBotDetails(details)
       setCsvUrl(details.csv_url || "")
@@ -156,16 +140,16 @@ export default function ToolsPage() {
       showToast("Error: Failed to load bot details.", 3000)
     }
     setIsLoading(false)
-  }, [botId, apiKey])
+  }, [botId])
 
   useEffect(() => {
     loadBotDetails()
   }, [loadBotDetails])
 
   const handleImportCsv = async () => {
-    if (!apiKey || !botDetails) return
+    if (!botDetails) return
     setIsImportingCsv(true)
-    const result = await updateBotDetails(botId, apiKey, {
+    const result = await updateBotDetails(botId, {
       name: botDetails.name,
       token: botDetails.token,
       csv_url: csvUrl.trim() || null,
@@ -183,9 +167,8 @@ export default function ToolsPage() {
   }
 
   const handleCloneBot = async () => {
-    if (!apiKey) return
     setIsCloning(true)
-    const result = await cloneBot(botId, apiKey)
+    const result = await cloneBot(botId)
     if (result.success) {
       showToast("Success: Bot cloning initiated.", 3000)
     } else {
@@ -207,76 +190,63 @@ export default function ToolsPage() {
   }
 
   const handleExportGit = async () => {
-    if (!apiKey || !botDetails) return
+    if (!botDetails) return
     setIsExportingGit(true)
-
-    const saveResult = await updateBotDetails(botId, apiKey, {
+    const saveResult = await updateBotDetails(botId, {
       name: botDetails.name,
       token: botDetails.token,
       csv_url: null,
       git_remote: gitRemoteUrl.trim() || null,
     })
-
     if (!saveResult.success || !saveResult.data) {
       showToast(`Git URL Save Failed: ${saveResult.error || "Could not save Git URL."}`, 3000)
       setIsExportingGit(false)
       return
     }
-
     setBotDetails(saveResult.data)
     setGitRemoteUrl(saveResult.data.git_remote || "")
     setCsvUrl("")
     showToast("Git URL saved. Starting export...")
-
-    const exportResult = await triggerGitTask(botId, apiKey, "git_export_tasks")
-
+    const exportResult = await triggerGitTask(botId, "git_export_tasks")
     if (exportResult.success) {
       showToast("Success: Bot export to Git repository initiated.")
     } else {
       showToast(`Git Export Failed: ${exportResult.error || "Could not start export."}`, 3000)
     }
-
     setIsExportingGit(false)
   }
 
   const handleImportGitRequest = () => setShowGitImportConfirm(true)
 
   const handleConfirmGitImport = async () => {
-    if (!apiKey || !botDetails) return
+    if (!botDetails) return
     setIsImportingGit(true)
-
-    const saveResult = await updateBotDetails(botId, apiKey, {
+    const saveResult = await updateBotDetails(botId, {
       name: botDetails.name,
       token: botDetails.token,
       csv_url: null,
       git_remote: gitRemoteUrl.trim() || null,
     })
-
     if (!saveResult.success || !saveResult.data) {
       showToast(`Git URL Save Failed: ${saveResult.error || "Could not save Git URL."}`, 3000)
       setIsImportingGit(false)
       setShowGitImportConfirm(false)
       return
     }
-
     setBotDetails(saveResult.data)
     setGitRemoteUrl(saveResult.data.git_remote || "")
     setCsvUrl("")
     showToast("Git URL saved. Starting import...")
-
-    const importResult = await triggerGitTask(botId, apiKey, "git_import_tasks")
-
+    const importResult = await triggerGitTask(botId, "git_import_tasks")
     if (importResult.success) {
       showToast("Success: Bot import from Git initiated. Commands may take a moment.", 3000)
     } else {
       showToast(`Git Import Failed: ${importResult.error || "Could not start import."}`, 3000)
     }
-
     setIsImportingGit(false)
     setShowGitImportConfirm(false)
   }
 
-  // LOADING (no tabs here)
   if (isLoading) {
     return (
       <main className="absolute inset-0 flex flex-col min-w-0 pt-14 sm:pt-16">
@@ -366,30 +336,15 @@ export default function ToolsPage() {
             <div>
               <label className="text-sm font-medium block mb-1">Deploy Key (Read-Only)</label>
               <div className="relative">
-                <Textarea
-                  readOnly
-                  value={botDetails?.rsa_public_key || "Loading key..."}
-                  rows={3}
-                  className="pr-10 bg-muted/50 font-mono text-xs"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-2 right-2 h-7 w-7"
-                  onClick={handleCopyKey}
-                  aria-label="Copy Deploy Key"
-                >
+                <Textarea readOnly value={botDetails?.rsa_public_key || "Loading key..."} rows={3} className="pr-10 bg-muted/50 font-mono text-xs" />
+                <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={handleCopyKey} aria-label="Copy Deploy Key">
                   {copiedKey ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Add this public key as a deploy key in your Git repository settings.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Add this public key as a deploy key in your Git repository settings.</p>
             </div>
             <div>
-              <label htmlFor="git-url" className="text-sm font-medium block mb-1">
-                Git Repository URL (SSH)
-              </label>
+              <label htmlFor="git-url" className="text-sm font-medium block mb-1">Git Repository URL (SSH)</label>
               <Input
                 id="git-url"
                 value={gitRemoteUrl}
@@ -399,20 +354,11 @@ export default function ToolsPage() {
               />
             </div>
             <div className="flex gap-2 pt-2">
-              <Button
-                onClick={handleExportGit}
-                disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim() || isImportingCsv}
-                className="w-full"
-              >
+              <Button onClick={handleExportGit} disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim() || isImportingCsv} className="w-full">
                 {isExportingGit ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-2" />}
                 {isExportingGit ? "Exporting..." : "Export to Git"}
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleImportGitRequest}
-                disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim() || isImportingCsv}
-                className="w-full"
-              >
+              <Button variant="outline" onClick={handleImportGitRequest} disabled={isExportingGit || isImportingGit || !gitRemoteUrl.trim() || isImportingCsv} className="w-full">
                 <DownloadCloud className="w-4 h-4 mr-2" />
                 Import from Git
               </Button>
@@ -426,8 +372,7 @@ export default function ToolsPage() {
           title="Import from Git?"
           description={
             <>
-              Importing from Git will{" "}
-              <span className="font-semibold text-destructive">overwrite all existing commands and libraries</span> in this
+              Importing from Git will <span className="font-semibold text-destructive">overwrite all existing commands and libraries</span> in this
               bot with the content from the repository: <br />
               <code className="text-xs bg-muted p-1 rounded font-semibold">{gitRemoteUrl || "N/A"}</code>
               <br />

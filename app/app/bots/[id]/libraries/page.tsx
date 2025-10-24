@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,6 +9,7 @@ import { LibraryCard } from "@/components/library-card"
 import { LibraryReadmeModal } from "@/components/library-readme-modal"
 import { InstalledLibsModal } from "@/components/installed-libs-modal"
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
+import Lottie from "lottie-react"
 
 export type StoreLibrary = {
   id: number
@@ -27,13 +28,36 @@ export type InstalledLibrary = {
   img_url: string
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchAllLibraries(apiKey: string): Promise<StoreLibrary[]> {
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchAllLibraries(): Promise<StoreLibrary[]> {
   try {
-    const url = `${BASE_URL}/store/libs?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch libraries: ${res.statusText}`)
+    const res = await apiFetch("/store/libs")
     return (await res.json()) as StoreLibrary[]
   } catch (e) {
     console.error("[fetchAllLibraries] Error:", e)
@@ -41,11 +65,9 @@ async function fetchAllLibraries(apiKey: string): Promise<StoreLibrary[]> {
   }
 }
 
-async function fetchInstalledLibraries(botId: string, apiKey: string): Promise<InstalledLibrary[]> {
+async function fetchInstalledLibraries(botId: string): Promise<InstalledLibrary[]> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/libs?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch installed libraries: ${res.statusText}`)
+    const res = await apiFetch(`/bots/${botId}/libs`)
     return (await res.json()) as InstalledLibrary[]
   } catch (e) {
     console.error("[fetchInstalledLibraries] Error:", e)
@@ -53,17 +75,16 @@ async function fetchInstalledLibraries(botId: string, apiKey: string): Promise<I
   }
 }
 
-async function installLibrary(botId: string, libId: number, apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function installLibrary(botId: string, libId: number): Promise<{ success: boolean; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/libs?api_key=${apiKey}`
-    const res = await fetch(url, {
+    const res = await apiFetch(`/bots/${botId}/libs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lib_id: libId }),
     })
 
     const resultText = await res.text()
-    if (res.ok && resultText === "true") return { success: true }
+    if (resultText === "true") return { success: true }
 
     try {
       const json = JSON.parse(resultText)
@@ -77,13 +98,12 @@ async function installLibrary(botId: string, libId: number, apiKey: string): Pro
   }
 }
 
-async function deleteLibrary(botId: string, libId: number, apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function deleteLibrary(botId: string, libId: number): Promise<{ success: boolean; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/libs/${libId}?api_key=${apiKey}`
-    const res = await fetch(url, { method: "DELETE" })
+    const res = await apiFetch(`/bots/${botId}/libs/${libId}`, { method: "DELETE" })
     const resultText = await res.text()
 
-    if (res.ok && resultText === "true") return { success: true }
+    if (resultText === "true") return { success: true }
     return { success: false, error: "Delete operation failed" }
   } catch (e) {
     console.error("[deleteLibrary] Error:", e)
@@ -104,17 +124,28 @@ export default function LibrariesPage() {
   const [selectedLib, setSelectedLib] = useState<StoreLibrary | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<InstalledLibrary | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [emptyAnimationData, setEmptyAnimationData] = useState<any>(null)
 
   const searchRef = useRef<HTMLInputElement | null>(null)
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
 
   useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
+    fetch("/lottie/empty-bots.json")
+      .then((response) => response.json())
+      .then((data) => setEmptyAnimationData(data))
+      .catch((error) => console.error("Error loading Lottie animation:", error))
+  }, [])
+
+  const loadAllData = useCallback(async () => {
+    setIsLoading(true)
+    const [allLibs, installedLibs] = await Promise.all([fetchAllLibraries(), fetchInstalledLibraries(botId)])
+    setAllLibraries(allLibs)
+    setInstalledLibraries(installedLibs)
+    setIsLoading(false)
+  }, [botId])
+
+  useEffect(() => {
     loadAllData()
-  }, [botId, apiKey])
+  }, [loadAllData])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -127,18 +158,6 @@ export default function LibrariesPage() {
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
-  const loadAllData = async () => {
-    if (!apiKey) return
-    setIsLoading(true)
-    const [allLibs, installedLibs] = await Promise.all([
-      fetchAllLibraries(apiKey),
-      fetchInstalledLibraries(botId, apiKey),
-    ])
-    setAllLibraries(allLibs)
-    setInstalledLibraries(installedLibs)
-    setIsLoading(false)
-  }
-
   const installedLibIds = useMemo(() => new Set(installedLibraries.map((lib) => lib.id)), [installedLibraries])
 
   const filteredLibraries = useMemo(() => {
@@ -150,10 +169,9 @@ export default function LibrariesPage() {
   }, [allLibraries, search])
 
   const handleInstall = async (libId: number) => {
-    if (!apiKey) return false
-    const result = await installLibrary(botId, libId, apiKey)
+    const result = await installLibrary(botId, libId)
     if (result.success) {
-      const installedLibs = await fetchInstalledLibraries(botId, apiKey)
+      const installedLibs = await fetchInstalledLibraries(botId)
       setInstalledLibraries(installedLibs)
       return true
     } else {
@@ -164,9 +182,9 @@ export default function LibrariesPage() {
   }
 
   const handleConfirmDelete = async () => {
-    if (!apiKey || !deleteConfirm) return
+    if (!deleteConfirm) return
     setIsDeleting(true)
-    const result = await deleteLibrary(botId, deleteConfirm.id, apiKey)
+    const result = await deleteLibrary(botId, deleteConfirm.id)
     if (result.success) {
       setInstalledLibraries((prev) => prev.filter((lib) => lib.id !== deleteConfirm.id))
       setDeleteConfirm(null)
@@ -182,8 +200,37 @@ export default function LibrariesPage() {
     setReadmeModalOpen(true)
   }
 
+  const EmptyState = () => (
+    <div className="text-center py-20 text-muted-foreground flex flex-col items-center justify-center space-y-6">
+      {emptyAnimationData ? (
+        <div className="w-64 h-64 mx-auto mb-4 -mt-4">
+          <Lottie
+            animationData={emptyAnimationData}
+            loop
+            autoplay
+            className="w-full h-full"
+            style={{ background: "transparent" }}
+          />
+        </div>
+      ) : (
+        <div className="w-24 h-24 rounded-full bg-muted/50 flex items-center justify-center mb-4 border border-border">
+          <Package className="w-12 h-12 text-muted-foreground" />
+        </div>
+      )}
+      <div className="space-y-3">
+        <h3 className="text-2xl font-bold text-foreground">
+          {allLibraries.length === 0 ? "Store is Empty" : "No libraries found"}
+        </h3>
+        <p className="text-muted-foreground max-w-sm text-lg">
+          {allLibraries.length === 0
+            ? "There are no libraries in the store right now."
+            : "Try adjusting your search to find what you're looking for."}
+        </p>
+      </div>
+    </div>
+  )
+
   return (
-    // Full-bleed page with global tabs from layout, top spacing = pt-25
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-4">
@@ -221,6 +268,8 @@ export default function LibrariesPage() {
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
+          ) : filteredLibraries.length === 0 ? (
+            <EmptyState />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredLibraries.map((lib) => (
@@ -232,11 +281,6 @@ export default function LibrariesPage() {
                   onReadMore={handleReadMore}
                 />
               ))}
-            </div>
-          )}
-          {!isLoading && filteredLibraries.length === 0 && (
-            <div className="text-center py-20 text-muted-foreground">
-              <p>No libraries found matching your search.</p>
             </div>
           )}
         </div>
@@ -264,8 +308,8 @@ export default function LibrariesPage() {
           description={
             <>
               Are you sure you want to delete the{" "}
-              <span className="font-semibold text-foreground">"{deleteConfirm.name}"</span>? This may break commands that
-              depend on it.
+              <span className="font-semibold text-foreground">"{deleteConfirm.name}"</span>? This may break commands
+              that depend on it.
             </>
           }
           confirmText="Delete"

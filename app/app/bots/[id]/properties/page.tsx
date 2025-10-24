@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -29,13 +29,36 @@ export type Property = {
   type: string
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchProperties(botId: string, apiKey: string): Promise<Property[]> {
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchProperties(botId: string): Promise<Property[]> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/properties?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch properties: ${res.statusText}`)
+    const res = await apiFetch(`/bots/${botId}/properties`)
     return (await res.json()) as Property[]
   } catch (e) {
     console.error("[fetchProperties] Error:", e)
@@ -45,21 +68,12 @@ async function fetchProperties(botId: string, apiKey: string): Promise<Property[
 
 async function deleteProperty(
   botId: string,
-  propertyId: number,
-  apiKey: string
+  propertyId: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/properties/${propertyId}?api_key=${apiKey}`
-    const res = await fetch(url, { method: "DELETE" })
-    if (!res.ok) {
-      let errorMsg = res.statusText
-      try {
-        const data = await res.json()
-        errorMsg = data.error || errorMsg
-      } catch {}
-      throw new Error(errorMsg)
-    }
-    await res.json()
+    await apiFetch(`/bots/${botId}/properties/${propertyId}`, {
+      method: "DELETE",
+    })
     return { success: true }
   } catch (e) {
     console.error("[deleteProperty] Error:", e)
@@ -88,24 +102,17 @@ export default function PropertiesPage() {
   const [deletedCount, setDeletedCount] = useState(0)
   const [clearErrorsCount, setClearErrorsCount] = useState(0)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
-
-  useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
-    loadProperties()
-  }, [botId, apiKey])
-
-  const loadProperties = async () => {
-    if (!apiKey) return
+  const loadProperties = useCallback(async () => {
     setIsLoading(true)
-    const fetchedProperties = await fetchProperties(botId, apiKey)
+    const fetchedProperties = await fetchProperties(botId)
     fetchedProperties.sort((a, b) => a.name.localeCompare(b.name))
     setProperties(fetchedProperties)
     setIsLoading(false)
-  }
+  }, [botId])
+
+  useEffect(() => {
+    loadProperties()
+  }, [loadProperties])
 
   const handleViewProperty = (prop: Property) => {
     setSelectedProperty(prop)
@@ -120,9 +127,9 @@ export default function PropertiesPage() {
   }
 
   const handleConfirmDelete = async () => {
-    if (!apiKey || !deleteConfirm) return
+    if (!deleteConfirm) return
     setIsDeleting(true)
-    const result = await deleteProperty(botId, deleteConfirm.id, apiKey)
+    const result = await deleteProperty(botId, deleteConfirm.id)
     if (result.success) {
       setProperties((prev) => prev.filter((p) => p.id !== deleteConfirm.id))
       toast({ title: "Success", description: `Property "${deleteConfirm.name}" deleted.` })
@@ -137,7 +144,6 @@ export default function PropertiesPage() {
   const handleClearAllRequest = () => setShowClearAllConfirm(true)
 
   const handleConfirmClearAll = async () => {
-    if (!apiKey) return
     setShowClearAllConfirm(false)
     setIsClearingAll(true)
     setClearProgress(0)
@@ -156,7 +162,7 @@ export default function PropertiesPage() {
     let count = 0
     let errors = 0
     for (const id of idsToDelete) {
-      const result = await deleteProperty(botId, id, apiKey)
+      const result = await deleteProperty(botId, id)
       if (!result.success) {
         errors++
         console.error(`Failed to delete property ID ${id}: ${result.error}`)
@@ -196,7 +202,6 @@ export default function PropertiesPage() {
   }
 
   return (
-    // Full-bleed like other pages; no local tabs; top padding = pt-25 (as requested)
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -243,7 +248,12 @@ export default function PropertiesPage() {
                     <Eye className="w-4 h-4" />
                     View
                   </Button>
-                  <Button size="sm" variant="destructive" className="flex-1 gap-2" onClick={() => handleDeleteRequest(prop)}>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1 gap-2"
+                    onClick={() => handleDeleteRequest(prop)}
+                  >
                     <Trash2 className="w-4 h-4" />
                     Delete
                   </Button>
@@ -267,7 +277,8 @@ export default function PropertiesPage() {
           description={
             <>
               Are you sure you want to delete the property{" "}
-              <span className="font-semibold text-foreground">"{deleteConfirm.name}"</span>? This action cannot be undone.
+              <span className="font-semibold text-foreground">"{deleteConfirm.name}"</span>? This action cannot be
+              undone.
             </>
           }
           confirmText="Delete Property"
@@ -282,8 +293,8 @@ export default function PropertiesPage() {
           title="Clear All Properties?"
           description={
             <>
-              Are you sure you want to delete <span className="font-semibold text-foreground">all properties</span> for this
-              bot? This action cannot be undone.
+              Are you sure you want to delete <span className="font-semibold text-foreground">all properties</span> for
+              this bot? This action cannot be undone.
             </>
           }
           confirmText="Clear All"
@@ -303,8 +314,8 @@ export default function PropertiesPage() {
             </p>
             {clearErrorsCount > 0 && !isClearingAll && (
               <p className="text-xs text-destructive mt-3 text-center">
-                {clearErrorsCount} {clearErrorsCount === 1 ? "property" : "properties"} failed to delete. Check console for
-                details.
+                {clearErrorsCount} {clearErrorsCount === 1 ? "property" : "properties"} failed to delete. Check console
+                for details.
               </p>
             )}
           </Card>

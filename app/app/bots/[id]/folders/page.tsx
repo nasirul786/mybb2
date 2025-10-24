@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,13 +16,36 @@ type CommandsFolder = {
   updated_at: string
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchFolders(botId: string, apiKey: string): Promise<CommandsFolder[]> {
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchFolders(botId: string): Promise<CommandsFolder[]> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/commands_folders?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch folders: ${res.statusText}`)
+    const res = await apiFetch(`/bots/${botId}/commands_folders`)
     return (await res.json()) as CommandsFolder[]
   } catch (e) {
     console.error("[fetchFolders] Error:", e)
@@ -30,20 +53,14 @@ async function fetchFolders(botId: string, apiKey: string): Promise<CommandsFold
   }
 }
 
-async function createFolder(
-  botId: string,
-  title: string,
-  apiKey: string
-): Promise<{ data?: CommandsFolder; error?: string }> {
+async function createFolder(botId: string, title: string): Promise<{ data?: CommandsFolder; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/commands_folders?api_key=${apiKey}`
-    const res = await fetch(url, {
+    const res = await apiFetch(`/bots/${botId}/commands_folders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.error || "Failed to create folder")
     return { data: data as CommandsFolder }
   } catch (e) {
     console.error("[createFolder] Error:", e)
@@ -51,23 +68,11 @@ async function createFolder(
   }
 }
 
-async function deleteFolder(
-  botId: string,
-  folderId: number,
-  apiKey: string
-): Promise<{ success: boolean; error?: string }> {
+async function deleteFolder(botId: string, folderId: number): Promise<{ success: boolean; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/commands_folders/${folderId}?api_key=${apiKey}`
-    const res = await fetch(url, { method: "DELETE" })
-    if (!res.ok) {
-      let errorMsg = res.statusText
-      try {
-        const data = await res.json()
-        errorMsg = data.error || errorMsg
-      } catch {}
-      throw new Error(errorMsg)
-    }
-    await res.json()
+    await apiFetch(`/bots/${botId}/commands_folders/${folderId}`, {
+      method: "DELETE",
+    })
     return { success: true }
   } catch (e) {
     console.error("[deleteFolder] Error:", e)
@@ -87,34 +92,27 @@ export default function FoldersPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<CommandsFolder | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
-
-  useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
-    loadFolders()
-  }, [botId, apiKey])
-
-  const loadFolders = async () => {
-    if (!apiKey) return
+  const loadFolders = useCallback(async () => {
     setIsLoading(true)
-    const fetchedFolders = await fetchFolders(botId, apiKey)
+    const fetchedFolders = await fetchFolders(botId)
     fetchedFolders.sort((a, b) => a.title.localeCompare(b.title))
     setFolders(fetchedFolders)
     setIsLoading(false)
-  }
+  }, [botId])
+
+  useEffect(() => {
+    loadFolders()
+  }, [loadFolders])
 
   const handleCreateFolder = async () => {
-    if (!apiKey || !newFolderTitle.trim()) {
+    if (!newFolderTitle.trim()) {
       setCreateError("Folder title cannot be empty.")
       return
     }
     setCreateError("")
     setIsCreating(true)
 
-    const result = await createFolder(botId, newFolderTitle.trim(), apiKey)
+    const result = await createFolder(botId, newFolderTitle.trim())
     if (result.data) {
       setFolders((prev) => [...prev, result.data!].sort((a, b) => a.title.localeCompare(b.title)))
       setNewFolderTitle("")
@@ -125,10 +123,10 @@ export default function FoldersPage() {
   }
 
   const handleConfirmDelete = async () => {
-    if (!apiKey || !deleteConfirm) return
+    if (!deleteConfirm) return
     setIsDeleting(true)
 
-    const result = await deleteFolder(botId, deleteConfirm.id, apiKey)
+    const result = await deleteFolder(botId, deleteConfirm.id)
     if (result.success) {
       setFolders((prev) => prev.filter((f) => f.id !== deleteConfirm.id))
       setDeleteConfirm(null)
@@ -140,12 +138,10 @@ export default function FoldersPage() {
   }
 
   return (
-    // Full-bleed layout, unified with others; no local tabs; uses pt-25
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <h2 className="text-2xl sm:text-3xl font-bold mb-6">Command Folders</h2>
 
-        {/* Create Folder Section */}
         <Card className="p-4 sm:p-6 mb-6">
           <h3 className="text-lg font-semibold mb-3">Create New Folder</h3>
           <div className="flex flex-col sm:flex-row gap-3">
@@ -172,12 +168,9 @@ export default function FoldersPage() {
               {isCreating ? "Creating..." : "Create"}
             </Button>
           </div>
-          {createError && (
-            <p className="text-sm text-destructive mt-2">{createError}</p>
-          )}
+          {createError && <p className="text-sm text-destructive mt-2">{createError}</p>}
         </Card>
 
-        {/* Folder List */}
         {isLoading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -193,16 +186,11 @@ export default function FoldersPage() {
         ) : (
           <div className="space-y-3">
             {folders.map((folder) => (
-              <Card
-                key={folder.id}
-                className="p-4 hover:shadow-md transition-shadow duration-200"
-              >
+              <Card key={folder.id} className="p-4 hover:shadow-md transition-shadow duration-200">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <Folder className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-                    <span className="font-medium truncate text-base">
-                      {folder.title}
-                    </span>
+                    <span className="font-medium truncate text-base">{folder.title}</span>
                   </div>
 
                   <Button
@@ -222,18 +210,15 @@ export default function FoldersPage() {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <DeleteConfirmModal
           title="Delete Folder?"
           description={
             <>
               Are you sure you want to delete the folder{" "}
-              <span className="font-semibold text-foreground">
-                "{deleteConfirm.title}"
-              </span>
-              ? Commands inside this folder will <strong>not</strong> be deleted but will
-              lose their folder assignment. This action cannot be undone.
+              <span className="font-semibold text-foreground">"{deleteConfirm.title}"</span>? Commands inside this
+              folder will <strong>not</strong> be deleted but will lose their folder assignment. This action cannot be
+              undone.
             </>
           }
           confirmText="Delete Folder"

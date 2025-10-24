@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import dynamic from "next/dynamic"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -60,13 +60,36 @@ const iconMap: { [key: string]: React.ElementType } = {
   settings: DefaultIcon,
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchAdminPanels(botId: string, apiKey: string): Promise<ActiveOption[]> {
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchAdminPanels(botId: string): Promise<ActiveOption[]> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/active_options?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch admin panels: ${res.statusText}`)
+    const res = await apiFetch(`/bots/${botId}/active_options`)
     const data = (await res.json()) as any[]
     const validPanels: ActiveOption[] = []
     for (const item of data) {
@@ -91,23 +114,15 @@ async function fetchAdminPanels(botId: string, apiKey: string): Promise<ActiveOp
 async function saveAdminPanel(
   botId: string,
   optionId: number,
-  value: AdminPanelValue,
-  apiKey: string
+  value: AdminPanelValue
 ): Promise<{ success: boolean; data?: ActiveOption; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/active_options/${optionId}?api_key=${apiKey}`
-    const res = await fetch(url, {
+    const res = await apiFetch(`/bots/${botId}/active_options/${optionId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: optionId, value }),
     })
     const responseData = await res.json()
-    if (!res.ok) {
-      const errorMessage = Array.isArray(responseData.errors)
-        ? responseData.errors[0]
-        : responseData.error || "Failed to save admin panel"
-      throw new Error(errorMessage)
-    }
     if (responseData.value && typeof responseData.value === "string") {
       try {
         responseData.value = JSON.parse(responseData.value)
@@ -135,8 +150,6 @@ export default function AdminPanelPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [emptyAnimationData, setEmptyAnimationData] = useState<any>(null)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
-
   useEffect(() => {
     const updatePanelIdFromHash = () => {
       const hash = window.location.hash
@@ -161,27 +174,11 @@ export default function AdminPanelPage() {
     } else {
       if (currentEditData !== null) setCurrentEditData(null)
     }
-  }, [selectedPanel])
+  }, [selectedPanel, currentEditData])
 
-  useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
-    loadPanels()
-  }, [botId, apiKey])
-
-  useEffect(() => {
-    fetch("/lottie/empty-bots.json")
-      .then((r) => r.json())
-      .then(setEmptyAnimationData)
-      .catch(() => {})
-  }, [])
-
-  const loadPanels = async () => {
-    if (!apiKey) return
+  const loadPanels = useCallback(async () => {
     setIsLoading(true)
-    const fetchedPanels = await fetchAdminPanels(botId, apiKey)
+    const fetchedPanels = await fetchAdminPanels(botId)
     fetchedPanels.sort((a, b) => {
       const valA = a.value as AdminPanelValue
       const valB = b.value as AdminPanelValue
@@ -193,7 +190,18 @@ export default function AdminPanelPage() {
     const match = hash.match(/^#panel-(\d+)$/)
     const panelId = match ? parseInt(match[1], 10) : null
     setSelectedPanelId(panelId)
-  }
+  }, [botId])
+
+  useEffect(() => {
+    loadPanels()
+  }, [loadPanels])
+
+  useEffect(() => {
+    fetch("/lottie/empty-bots.json")
+      .then((r) => r.json())
+      .then(setEmptyAnimationData)
+      .catch(() => {})
+  }, [])
 
   const handleFieldChange = (fieldName: string, value: any) => {
     setCurrentEditData((prevData) => {
@@ -206,9 +214,9 @@ export default function AdminPanelPage() {
   }
 
   const handleSaveChanges = async () => {
-    if (!apiKey || !selectedPanelId || !currentEditData) return
+    if (!selectedPanelId || !currentEditData) return
     setIsSaving(true)
-    const result = await saveAdminPanel(botId, selectedPanelId, currentEditData, apiKey)
+    const result = await saveAdminPanel(botId, selectedPanelId, currentEditData)
     if (result.success && result.data) {
       setPanels((prevPanels) =>
         prevPanels.map((panel) => (panel.id === selectedPanelId ? result.data! : panel))
@@ -235,7 +243,6 @@ export default function AdminPanelPage() {
   const panelValue = selectedPanel?.value as AdminPanelValue | undefined
 
   return (
-    // Full-bleed layout, no local tabs, unified spacing
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

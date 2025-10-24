@@ -1,5 +1,6 @@
 "use client"
-import { useEffect, useState, useRef } from "react"
+
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -9,12 +10,14 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Copy, Check, Loader2, LogOut, Link as LinkIcon, RefreshCcw, Mail, Key, Calendar, Eye, EyeOff } from "lucide-react"
 import { DeleteConfirmModal } from "@/components/delete-confirm-modal"
+
 type User = {
   id: number
   email: string
   created_at: string
   api_key: string
 }
+
 type LinkedAccount = {
   id: number
   first_name: string | null
@@ -24,10 +27,48 @@ type LinkedAccount = {
   created_at: string
   language_code: string | null
 }
+
 type ToastType = "success" | "destructive"
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const USER_STORAGE_KEY = `${API_KEY_STORAGE_KEY}_user`
+const apiUrl = (path: string) => `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      localStorage.removeItem(USER_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (options.method === "DELETE" && res.status === 204) {
+    return res
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    let errorMsg = text || `HTTP ${res.status}`
+    try {
+      const json = JSON.parse(text)
+      errorMsg = json?.error || errorMsg
+    } catch {}
+    throw new Error(errorMsg)
+  }
+  return res
+}
+
 export default function AccountPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [apiKey, setApiKey] = useState<string>("")
   const [user, setUser] = useState<User | null>(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const [copyEmailOk, setCopyEmailOk] = useState(false)
@@ -57,6 +98,7 @@ export default function AccountPage() {
   const emailTimer = useRef<number | null>(null)
   const keyTimer = useRef<number | null>(null)
   const router = useRouter()
+
   function showToast(message: string, type: ToastType = "success") {
     setToastMessage(message)
     setToastType(type)
@@ -67,6 +109,7 @@ export default function AccountPage() {
       setToastMessage(null)
     }, 2500)
   }
+
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768) setSidebarOpen(false)
@@ -74,67 +117,59 @@ export default function AccountPage() {
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
-  useEffect(() => {
+
+  const loadUserData = useCallback(async () => {
+    setLoadingUser(true)
     try {
-      const k = localStorage.getItem("mybb_api_key")
-      if (!k) {
-        window.location.href = "/app"
-        return
+      const res = await apiFetch("/user")
+      const data: User = await res.json()
+      setUser(data)
+      setEmailInput(data.email)
+    } catch (e: any) {
+      if (e.message !== "Unauthorized" && e.message !== "No API key") {
+        showToast(`Failed to load account: ${e?.message ?? "Unknown error"}`, "destructive")
       }
-      setApiKey(k)
-    } catch {
-      window.location.href = "/app"
+    } finally {
+      setLoadingUser(false)
     }
   }, [])
-  useEffect(() => {
-    if (!apiKey) return
-    ;(async () => {
-      setLoadingUser(true)
-      try {
-        const res = await fetch(`https://appapi.bots.business/v2/user?api_key=${encodeURIComponent(apiKey)}`, { cache: "no-store" })
-        if (!res.ok) throw new Error(`Failed to load user: ${res.status}`)
-        const data: User = await res.json()
-        setUser(data)
-        setEmailInput(data.email)
-      } catch (e: any) {
-        showToast(`Failed to load account: ${e?.message ?? "Unknown error"}`, "destructive")
-      } finally {
-        setLoadingUser(false)
-      }
-    })()
-  }, [apiKey])
-  useEffect(() => {
-    if (!apiKey) return
-    ;(async () => {
-      setLoadingSessions(true)
-      try {
-        const res = await fetch(`https://appapi.bots.business/v2/user/tokens?api_key=${encodeURIComponent(apiKey)}`, { cache: "no-store" })
-        if (!res.ok) throw new Error(`Failed to load sessions: ${res.status}`)
-        const data: string[] = await res.json()
-        setSessions(data)
-      } catch (e: any) {
+
+  const loadSessionsData = useCallback(async () => {
+    setLoadingSessions(true)
+    try {
+      const res = await apiFetch("/user/tokens")
+      const data: string[] = await res.json()
+      setSessions(data)
+    } catch (e: any) {
+       if (e.message !== "Unauthorized" && e.message !== "No API key") {
         showToast(`Failed to load sessions: ${e?.message ?? "Unknown error"}`, "destructive")
-      } finally {
-        setLoadingSessions(false)
       }
-    })()
-  }, [apiKey])
-  useEffect(() => {
-    if (!apiKey) return
-    ;(async () => {
-      setLoadingLinked(true)
-      try {
-        const res = await fetch(`https://appapi.bots.business/v2/user/linked_accounts?api_key=${encodeURIComponent(apiKey)}`, { cache: "no-store" })
-        if (!res.ok) throw new Error(`Failed to load linked accounts: ${res.status}`)
-        const data: LinkedAccount[] = await res.json()
-        setLinked(data)
-      } catch (e: any) {
+    } finally {
+      setLoadingSessions(false)
+    }
+  }, [])
+
+  const loadLinkedAccounts = useCallback(async () => {
+    setLoadingLinked(true)
+    try {
+      const res = await apiFetch("/user/linked_accounts")
+      const data: LinkedAccount[] = await res.json()
+      setLinked(data)
+    } catch (e: any) {
+       if (e.message !== "Unauthorized" && e.message !== "No API key") {
         showToast(`Failed to load linked accounts: ${e?.message ?? "Unknown error"}`, "destructive")
-      } finally {
-        setLoadingLinked(false)
       }
-    })()
-  }, [apiKey])
+    } finally {
+      setLoadingLinked(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadUserData()
+    loadSessionsData()
+    loadLinkedAccounts()
+  }, [loadUserData, loadSessionsData, loadLinkedAccounts])
+
   async function copyToClipboard(text: string, which: "email" | "key") {
     try {
       await navigator.clipboard.writeText(text)
@@ -151,22 +186,17 @@ export default function AccountPage() {
       showToast("Copy failed: Clipboard is not available", "destructive")
     }
   }
+
   async function submitEmailChange() {
-    if (!emailInput || !apiKey) return
+    if (!emailInput) return
     setChangingEmail(true)
     try {
-      const res = await fetch(`https://appapi.bots.business/v2/user/email?api_key=${encodeURIComponent(apiKey)}`, {
+      const res = await apiFetch("/user/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailInput }),
       })
-      const txt = await res.text()
-      let parsed: any = null
-      try { parsed = txt ? JSON.parse(txt) : null } catch {}
-      if (!res.ok) {
-        const msg = parsed?.error || `Email change failed: ${res.status}`
-        throw new Error(msg)
-      }
+      const parsed = await res.json().catch(() => null)
       if (parsed?.email) {
         setUser((u) => (u ? { ...u, email: parsed.email } : u))
         showToast(`Email successfully changed to ${parsed.email}`)
@@ -180,6 +210,7 @@ export default function AccountPage() {
       setShowEmailConfirmModal(false)
     }
   }
+
   async function submitPasswordUpdate() {
     if (!currentPassword || !newPassword || !confirmPassword) {
       showToast("Missing fields: Please fill all password fields", "destructive")
@@ -191,7 +222,7 @@ export default function AccountPage() {
     }
     setUpdatingPassword(true)
     try {
-      const res = await fetch(`https://appapi.bots.business/v2/auth?api_key=${encodeURIComponent(apiKey)}`, {
+      await apiFetch("/auth", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -200,15 +231,6 @@ export default function AccountPage() {
           password_confirmation: confirmPassword,
         }),
       })
-      if (!res.ok) {
-        const txt = await res.text()
-        let msg = `Password update failed: ${res.status}`
-        try {
-          const j = JSON.parse(txt)
-          msg = j?.error || msg
-        } catch {}
-        throw new Error(msg)
-      }
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
@@ -219,24 +241,23 @@ export default function AccountPage() {
       setUpdatingPassword(false)
     }
   }
+
   async function doLogoutAllDevices() {
-    if (!apiKey) return
     setLoggingOutAll(true)
     try {
-      await fetch(`https://appapi.bots.business/v2/auth/sign_out?api_key=${encodeURIComponent(apiKey)}`, { method: "DELETE" })
+      await apiFetch("/auth/sign_out", { method: "DELETE" })
     } catch {}
     try {
-      localStorage.removeItem("mybb_api_key")
-      localStorage.removeItem("mybb_user")
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      localStorage.removeItem(USER_STORAGE_KEY)
     } catch {}
     window.location.href = "/app/"
   }
+
   async function linkNewAccount() {
-    if (!apiKey) return
     setLinkingNew(true)
     try {
-      const res = await fetch(`https://appapi.bots.business/v2/user/tg_connection_link?api_key=${encodeURIComponent(apiKey)}`, { cache: "no-store" })
-      if (!res.ok) throw new Error(`Failed to get link: ${res.status}`)
+      const res = await apiFetch("/user/tg_connection_link")
       const data = await res.json()
       const link = data?.link
       if (!link) throw new Error("No link in response")
@@ -247,25 +268,19 @@ export default function AccountPage() {
       setLinkingNew(false)
     }
   }
+
   async function confirmResetApiKey() {
-    if (!apiKey) return
     setResettingKey(true)
     try {
-      const res = await fetch(`https://appapi.bots.business/v2/user/reset_api_key?api_key=${encodeURIComponent(apiKey)}`, {
+      const res = await apiFetch("/user/reset_api_key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       })
-      if (!res.ok) {
-        const txt = await res.text()
-        let msg = `Reset failed: ${res.status}`
-        try { msg = JSON.parse(txt)?.error || msg } catch {}
-        throw new Error(msg)
-      }
       const data: User = await res.json()
       setUser((u) => (u ? { ...u, api_key: data.api_key } : data))
       try {
-        localStorage.setItem("mybb_api_key", data.api_key)
-        setApiKey(data.api_key)
+        localStorage.setItem(API_KEY_STORAGE_KEY, data.api_key)
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data))
       } catch {}
       showToast("API key reset. Stored locally and applied to session.")
       setShowResetKeyModal(false)
@@ -275,7 +290,9 @@ export default function AccountPage() {
       setResettingKey(false)
     }
   }
+
   const isBusy = loadingUser
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <AppSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -338,6 +355,7 @@ export default function AccountPage() {
               <div className="text-destructive">Failed to load user.</div>
             )}
           </Card>
+
           <Card className="p-6 space-y-4">
             <h2 className="text-xl font-semibold">Change Email</h2>
             <div className="grid gap-4">
@@ -353,6 +371,7 @@ export default function AccountPage() {
               </Button>
             </div>
           </Card>
+
           <Card className="p-6 space-y-4">
             <h2 className="text-xl font-semibold">Update Password</h2>
             <div className="grid gap-4">
@@ -379,7 +398,7 @@ export default function AccountPage() {
                     </Button>
                   </div>
                 </div>
-               
+
                 <div className="grid gap-2">
                   <span className="text-sm text-muted-foreground">New Password</span>
                   <div className="relative">
@@ -402,7 +421,7 @@ export default function AccountPage() {
                     </Button>
                   </div>
                 </div>
-               
+
                 <div className="grid gap-2">
                   <span className="text-sm text-muted-foreground">Confirm New Password</span>
                   <div className="relative">
@@ -432,6 +451,7 @@ export default function AccountPage() {
               </Button>
             </div>
           </Card>
+
           <Card className="p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold">Active Sessions</h2>
@@ -454,6 +474,7 @@ export default function AccountPage() {
               <div className="text-destructive">Failed to load sessions.</div>
             )}
           </Card>
+
           <Card className="p-6 space-y-4">
             <h2 className="text-xl font-semibold">Linked Telegram Accounts</h2>
             {loadingLinked ? (
@@ -488,6 +509,7 @@ export default function AccountPage() {
           </Card>
         </main>
       </div>
+
       {showResetKeyModal ? (
         <DeleteConfirmModal
           title="Reset API Key?"
@@ -504,6 +526,7 @@ export default function AccountPage() {
           onCancel={() => setShowResetKeyModal(false)}
         />
       ) : null}
+
       {showLogoutAllModal ? (
         <DeleteConfirmModal
           title="Log out everywhere?"
@@ -514,6 +537,7 @@ export default function AccountPage() {
           onCancel={() => setShowLogoutAllModal(false)}
         />
       ) : null}
+
       {showEmailConfirmModal ? (
         <DeleteConfirmModal
           title="Change Email?"
@@ -524,10 +548,13 @@ export default function AccountPage() {
           onCancel={() => setShowEmailConfirmModal(false)}
         />
       ) : null}
+
       {toastMessage && (
-        <div className={`fixed left-1/2 -translate-x-1/2 bottom-10 z-50 px-4 py-2 rounded-md shadow-lg text-sm font-medium
-          bg-white text-black border
-        `}>
+        <div
+          className={`fixed left-1/2 -translate-x-1/2 bottom-10 z-50 px-4 py-2 rounded-md shadow-lg text-sm font-medium ${
+            toastType === "destructive" ? "bg-destructive text-destructive-foreground border border-destructive/50" : "bg-background text-foreground border"
+          }`}
+        >
           {toastMessage}
         </div>
       )}

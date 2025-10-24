@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,7 +18,9 @@ import {
   Info,
 } from "lucide-react"
 
-const BASE_API = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
 type IterationRes = {
   id: number
@@ -54,27 +56,48 @@ type PlanRes = {
   priority: number
 }
 
-async function apiGet(url: string) {
-  const r = await fetch(url)
-  const d = await r.json().catch(() => null)
-  return { ok: r.ok, data: d as any, status: r.status }
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
 }
 
-async function apiPost(url: string, body?: any) {
-  const r = await fetch(url, {
+async function apiGet(path: string) {
+  const res = await apiFetch(path)
+  const d = await res.json().catch(() => null)
+  return { ok: res.ok, data: d, status: res.status }
+}
+
+async function apiPost(path: string, body?: any) {
+  const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   })
-  const d = await r.json().catch(() => null)
-  return { ok: r.ok, data: d as any, status: r.status }
+  const d = await res.json().catch(() => null)
+  return { ok: res.ok, data: d, status: res.status }
 }
 
 export default function IterationPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { toast } = useToast()
-
-  const [apiKey, setApiKey] = useState<string | null>(null)
 
   const [iterations, setIterations] = useState<IterationRes | null>(null)
   const [plan, setPlan] = useState<PlanRes | null>(null)
@@ -84,29 +107,13 @@ export default function IterationPage() {
 
   const [togglingAds, setTogglingAds] = useState(false)
 
-  useEffect(() => {
-    const key = localStorage.getItem("mybb_api_key")
-    setApiKey(key)
-    if (!key) {
-      setLoading(false)
-      setError("API key missing. Set it in app settings.")
-      toast({
-        variant: "destructive",
-        title: "API Key Not Found",
-        description: "Please set your API key in the app settings.",
-      })
-      return
-    }
-    fetchAll(key)
-  }, [toast])
-
-  const fetchAll = async (key: string) => {
+  const fetchAll = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const [it, pl] = await Promise.all([
-        apiGet(`${BASE_API}/user/iterations?api_key=${encodeURIComponent(key)}`),
-        apiGet(`${BASE_API}/user/payment_plan?api_key=${encodeURIComponent(key)}`),
+        apiGet("/user/iterations"),
+        apiGet("/user/payment_plan"),
       ])
 
       if (!it.ok) throw new Error(parseErr(it))
@@ -116,12 +123,19 @@ export default function IterationPage() {
       setPlan(pl.data as PlanRes)
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load data"
+      if (msg === "Unauthorized" || msg === "No API key") {
+        return
+      }
       setError(msg)
       toast({ variant: "destructive", title: "Load failed", description: msg })
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
+
+  useEffect(() => {
+    fetchAll()
+  }, [fetchAll])
 
   const parseErr = (res: { status: number; data: any }) =>
     res.data?.error || `HTTP ${res.status}`
@@ -151,12 +165,10 @@ export default function IterationPage() {
   }, [iterations])
 
   const handleToggleAds = async () => {
-    if (!apiKey || !iterations) return
+    if (!iterations) return
     setTogglingAds(true)
     try {
-      const r = await apiPost(
-        `${BASE_API}/user/iterations/toggle_ads?api_key=${encodeURIComponent(apiKey)}`
-      )
+      const r = await apiPost("/user/iterations/toggle_ads")
       if (!r.ok) throw new Error(parseErr(r))
       setIterations(r.data as IterationRes)
       toast({
@@ -179,7 +191,6 @@ export default function IterationPage() {
         <main className="flex-1 p-6 space-y-6">
           <h1 className="text-3xl font-bold">Iteration</h1>
 
-          {/* Usage + Next Credit + Ads toggle */}
           <Card>
             <CardHeader className="flex flex-col gap-1">
               <CardTitle className="flex items-center justify-between">
@@ -191,7 +202,6 @@ export default function IterationPage() {
                 ) : null}
               </CardTitle>
 
-              {/* Dates: one per line on mobile, side-by-side on sm+ */}
               {startedAt || nextCreditAt ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-xs text-muted-foreground">
                   {startedAt ? (
@@ -225,7 +235,6 @@ export default function IterationPage() {
                         / {Intl.NumberFormat().format(iterations.limit)} total
                       </span>
                     </div>
-                    {/* hide remaining on mobile */}
                     <div className="text-muted-foreground hidden sm:block">
                       {Intl.NumberFormat().format(remaining)} remaining
                     </div>
@@ -234,7 +243,6 @@ export default function IterationPage() {
                   <Progress value={pct} className="h-3" />
 
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    {/* Extra points: added Zap icon back */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 text-sm">
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-yellow-500" />
@@ -284,7 +292,6 @@ export default function IterationPage() {
             </CardContent>
           </Card>
 
-          {/* Plan details */}
           <Card>
             <CardHeader>
               <CardTitle>Current Plan</CardTitle>
@@ -338,7 +345,6 @@ export default function IterationPage() {
                     </div>
                   </div>
 
-                  {/* Upgrade button: 100% width */}
                   <Button asChild className="w-full">
                     <a href="/app/cloud">
                       <ArrowUpRight className="mr-2 h-4 w-4" />

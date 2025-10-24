@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import dynamic from "next/dynamic"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -36,13 +36,36 @@ type ErrorLog = {
   } | null
 }
 
-const BASE_URL = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
-async function fetchErrorLogs(botId: string, apiKey: string): Promise<ErrorLog[]> {
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
+async function fetchErrorLogs(botId: string): Promise<ErrorLog[]> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/error_logs?api_key=${apiKey}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch error logs: ${res.statusText}`)
+    const res = await apiFetch(`/bots/${botId}/error_logs`)
     return (await res.json()) as ErrorLog[]
   } catch (e) {
     console.error("[fetchErrorLogs] Error:", e)
@@ -50,18 +73,9 @@ async function fetchErrorLogs(botId: string, apiKey: string): Promise<ErrorLog[]
   }
 }
 
-async function clearErrorLogs(botId: string, apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function clearErrorLogs(botId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const url = `${BASE_URL}/bots/${botId}/error_logs?api_key=${apiKey}`
-    const res = await fetch(url, { method: "DELETE" })
-    if (!res.ok) {
-      let errorMsg = res.statusText
-      try {
-        const data = await res.json()
-        errorMsg = data.error || errorMsg
-      } catch {}
-      throw new Error(errorMsg)
-    }
+    const res = await apiFetch(`/bots/${botId}/error_logs`, { method: "DELETE" })
     const data = await res.json()
     if (!Array.isArray(data) || data.length !== 0) {
       console.warn("Clear logs response was not an empty array:", data)
@@ -86,15 +100,16 @@ export default function ErrorsPage() {
   const [emptyAnimationData, setEmptyAnimationData] = useState<any>(null)
   const [copiedLogId, setCopiedLogId] = useState<number | null>(null)
 
-  const apiKey = typeof window !== "undefined" ? localStorage.getItem("mybb_api_key") : null
+  const loadErrorLogs = useCallback(async () => {
+    setIsLoading(true)
+    const fetchedLogs = await fetchErrorLogs(botId)
+    setErrorLogs(fetchedLogs)
+    setIsLoading(false)
+  }, [botId])
 
   useEffect(() => {
-    if (!apiKey) {
-      setIsLoading(false)
-      return
-    }
     loadErrorLogs()
-  }, [botId, apiKey])
+  }, [loadErrorLogs])
 
   useEffect(() => {
     fetch("/lottie/empty-bots.json")
@@ -102,14 +117,6 @@ export default function ErrorsPage() {
       .then(setEmptyAnimationData)
       .catch(() => {})
   }, [])
-
-  const loadErrorLogs = async () => {
-    if (!apiKey) return
-    setIsLoading(true)
-    const fetchedLogs = await fetchErrorLogs(botId, apiKey)
-    setErrorLogs(fetchedLogs)
-    setIsLoading(false)
-  }
 
   const handleCopyToClipboard = async (log: ErrorLog) => {
     const textToCopy = `Error: ${log.title}\n\n${log.stack_trace || "No stack trace available."}\n\nOccurred: ${new Date(
@@ -132,9 +139,8 @@ export default function ErrorsPage() {
   }
 
   const handleConfirmClearLogs = async () => {
-    if (!apiKey) return
     setIsClearing(true)
-    const result = await clearErrorLogs(botId, apiKey)
+    const result = await clearErrorLogs(botId)
     if (result.success) {
       setErrorLogs([])
       setShowClearConfirm(false)
@@ -147,7 +153,6 @@ export default function ErrorsPage() {
   }
 
   return (
-    // Full-bleed. No local tabs. Consistent top padding.
     <main className="absolute inset-0 flex flex-col min-w-0 pt-25">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -192,9 +197,7 @@ export default function ErrorsPage() {
               <Card key={log.id} className="p-4">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-destructive break-words mb-1">
-                      {log.title}
-                    </p>
+                    <p className="text-sm font-medium text-destructive break-words mb-1">{log.title}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
                     </p>
@@ -245,8 +248,7 @@ export default function ErrorsPage() {
           title="Clear Error Log?"
           description={
             <>
-              Are you sure you want to clear the entire error log for this bot?
-              This action cannot be undone.
+              Are you sure you want to clear the entire error log for this bot? This action cannot be undone.
             </>
           }
           confirmText="Clear Log"

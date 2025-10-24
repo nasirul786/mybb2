@@ -5,6 +5,7 @@ import {
   ChangeEvent,
   DragEvent,
   useRef,
+  useCallback,
 } from "react"
 import dynamic from "next/dynamic"
 import { AppHeader } from "@/components/app-header"
@@ -32,7 +33,9 @@ import { MagicToolTerminal } from "@/components/magic-tool-terminal"
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false })
 
-const BASE_API = "https://appapi.bots.business/v2"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
+const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
+const apiUrl = (p: string) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`
 
 type Bot = {
   id: string
@@ -57,30 +60,53 @@ type ExportData = {
   libs: string[]
 }
 
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const apiKey = typeof window !== "undefined" ? localStorage.getItem(API_KEY_STORAGE_KEY) : null
+  if (!apiKey) {
+    if (typeof window !== "undefined") window.location.href = "/app"
+    throw new Error("No API key")
+  }
+  const sep = path.includes("?") ? "&" : "?"
+  const url = apiUrl(`${path}${sep}api_key=${encodeURIComponent(apiKey)}`)
+  const res = await fetch(url, { cache: "no-store", ...options })
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(API_KEY_STORAGE_KEY)
+      window.location.href = "/app"
+    }
+    throw new Error("Unauthorized")
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res
+}
+
 async function apiPost(
-  url: string,
+  path: string,
   body: any
 ): Promise<{ ok: boolean; data: any; error?: string }> {
   try {
-    const r = await fetch(url, {
+    const res = await apiFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
-    const d = await r.json().catch(() => null)
-    return { ok: r.ok, data: d }
+    const d = await res.json().catch(() => null)
+    return { ok: true, data: d }
   } catch (e) {
     return { ok: false, data: null, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
 async function apiGet(
-  url: string
+  path: string
 ): Promise<{ ok: boolean; data: any; error?: string }> {
   try {
-    const r = await fetch(url)
-    const d = await r.json().catch(() => null)
-    return { ok: r.ok, data: d }
+    const res = await apiFetch(path)
+    const d = await res.json().catch(() => null)
+    return { ok: true, data: d }
   } catch (e) {
     return { ok: false, data: null, error: e instanceof Error ? e.message : String(e) }
   }
@@ -121,11 +147,27 @@ export default function MagicToolPage() {
     return () => window.removeEventListener("resize", handleResize)
   }, [])
 
+  const loadBots = useCallback(async () => {
+    setIsLoadingBots(true)
+    const res = await apiGet(`/bots`)
+    if (!res.ok) {
+      toast({
+        variant: "destructive",
+        title: "Failed to load bots",
+        description: res.data?.error || res.error || "Unknown error",
+      })
+      setBots([])
+    } else {
+      setBots(Array.isArray(res.data) ? res.data : [])
+    }
+    setIsLoadingBots(false)
+  }, [toast])
+
   useEffect(() => {
-    const key = localStorage.getItem("mybb_api_key")
+    const key = localStorage.getItem(API_KEY_STORAGE_KEY)
     setApiKey(key)
     if (key) {
-      loadBots(key)
+      loadBots()
     } else {
       setIsLoadingBots(false)
       toast({
@@ -134,7 +176,7 @@ export default function MagicToolPage() {
         description: "Please set your API key in the app settings.",
       })
     }
-  }, [toast])
+  }, [toast, loadBots])
 
   useEffect(() => {
     fetch("/lottie/empty-bots.json")
@@ -158,24 +200,6 @@ export default function MagicToolPage() {
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
-
-  const loadBots = async (key: string) => {
-    setIsLoadingBots(true)
-    const res = await apiGet(
-      `${BASE_API}/bots?api_key=${encodeURIComponent(key)}`
-    )
-    if (!res.ok) {
-      toast({
-        variant: "destructive",
-        title: "Failed to load bots",
-        description: res.data?.error || res.error || "Unknown error",
-      })
-      setBots([])
-    } else {
-      setBots(Array.isArray(res.data) ? res.data : [])
-    }
-    setIsLoadingBots(false)
-  }
 
   const logAppend = (msg: string) => {
     const now = new Date().toLocaleTimeString()
@@ -215,7 +239,7 @@ export default function MagicToolPage() {
   }
 
   const exportBotFlow = async () => {
-    if (!apiKey || !selectedBotId) {
+    if (!selectedBotId) {
       toast({ title: "Please select a bot first" })
       return
     }
@@ -224,9 +248,7 @@ export default function MagicToolPage() {
     try {
       logAppend("Starting export...")
       logAppend("Fetching bot details...")
-      const botRes = await apiGet(
-        `${BASE_API}/bots/${selectedBotId}?api_key=${encodeURIComponent(apiKey)}`
-      )
+      const botRes = await apiGet(`/bots/${selectedBotId}`)
       if (!botRes.ok) throw new Error("Failed to get bot details")
       const bot = botRes.data
       logAppend("Bot details fetched.")
@@ -238,9 +260,7 @@ export default function MagicToolPage() {
       do {
         logAppend(`Fetching command page ${page}...`)
         const commandsRes = await apiGet(
-          `${BASE_API}/bots/${selectedBotId}/commands?api_key=${encodeURIComponent(
-            apiKey
-          )}&page=${page}`
+          `/bots/${selectedBotId}/commands?page=${page}`
         )
         if (!commandsRes.ok) throw new Error("Failed to get commands")
         commandsArr = Array.isArray(commandsRes.data) ? commandsRes.data : []
@@ -254,11 +274,7 @@ export default function MagicToolPage() {
       logAppend(`Total commands retrieved: ${allCommands.length}`)
 
       logAppend("Fetching folders...")
-      const foldersRes = await apiGet(
-        `${BASE_API}/bots/${selectedBotId}/commands_folders?api_key=${encodeURIComponent(
-          apiKey
-        )}`
-      )
+      const foldersRes = await apiGet(`/bots/${selectedBotId}/commands_folders`)
       if (!foldersRes.ok) throw new Error("Failed to get folders")
       const foldersArr = Array.isArray(foldersRes.data) ? foldersRes.data : []
       logAppend(`...Folders fetched: ${foldersArr.length}`)
@@ -267,11 +283,7 @@ export default function MagicToolPage() {
       }
 
       logAppend("Fetching libs...")
-      const libsRes = await apiGet(
-        `${BASE_API}/bots/${selectedBotId}/libs?api_key=${encodeURIComponent(
-          apiKey
-        )}`
-      )
+      const libsRes = await apiGet(`/bots/${selectedBotId}/libs`)
       if (!libsRes.ok) throw new Error("Failed to get libs")
       const libsArr = Array.isArray(libsRes.data) ? libsRes.data : []
       logAppend(`...Libs fetched: ${libsArr.length}`)
@@ -407,11 +419,11 @@ export default function MagicToolPage() {
     setUploadAutoStart(false)
   }
 
-  const ensureLibsMap = async (key: string) => {
+  const ensureLibsMap = async () => {
     if (storeLibMap) return storeLibMap
     const newMap: Record<string, string> = {}
     logAppend("Fetching library map from store...")
-    const r = await apiGet(`${BASE_API}/store/libs?api_key=${encodeURIComponent(key)}`)
+    const r = await apiGet(`/store/libs`)
     if (r.ok && Array.isArray(r.data)) {
       for (const l of r.data) {
         newMap[l.name.toLowerCase().trim()] = l.id
@@ -432,10 +444,7 @@ export default function MagicToolPage() {
       const name = uploadBotName.trim() || "New Bot"
       const token = uploadBotToken.trim() || ""
       logAppend(`Sending request to create bot: ${name}`)
-      const create = await apiPost(
-        `${BASE_API}/bots?api_key=${encodeURIComponent(apiKey)}`,
-        { name, token }
-      )
+      const create = await apiPost(`/bots`, { name, token })
       if (!create.ok || !create.data?.id) {
         throw new Error(
           "Create bot failed: " +
@@ -450,7 +459,7 @@ export default function MagicToolPage() {
         : []
       if (libsArr.length) {
         logAppend(`Found ${libsArr.length} libs to install...`)
-        const map = await ensureLibsMap(apiKey)
+        const map = await ensureLibsMap()
         for (const libNameRaw of libsArr) {
           const libName = String(libNameRaw || "").trim()
           if (!libName) {
@@ -464,10 +473,7 @@ export default function MagicToolPage() {
           }
           logAppend(`Installing lib: ${libName} (id:${libId})`)
           logAppend(`> POST /bots/${botId}/libs ...`)
-          const r = await apiPost(
-            `${BASE_API}/bots/${botId}/libs?api_key=${encodeURIComponent(apiKey)}`,
-            { lib_id: libId }
-          )
+          const r = await apiPost(`/bots/${botId}/libs`, { lib_id: libId })
           if (r.ok) logAppend(`> Install OK: ${libName}`)
           else
             logAppend(
@@ -488,12 +494,7 @@ export default function MagicToolPage() {
         for (const f of foldersArr) {
           const title = String(f || "(untitled)")
           logAppend(`Creating folder: ${title}`)
-          const r = await apiPost(
-            `${BASE_API}/bots/${botId}/commands_folders?api_key=${encodeURIComponent(
-              apiKey
-            )}`,
-            { title }
-          )
+          const r = await apiPost(`/bots/${botId}/commands_folders`, { title })
           if (r.ok && r.data?.id) {
             folderMap[title] = r.data.id
             logAppend(`> Folder created: ${title} (id:${r.data.id})`)
@@ -527,12 +528,7 @@ export default function MagicToolPage() {
         logAppend(
           `Creating command ${cmdCount}/${loadedJsonFile.commands.length}: ${payload.command}`
         )
-        const r = await apiPost(
-          `${BASE_API}/bots/${botId}/commands?api_key=${encodeURIComponent(
-            apiKey
-          )}`,
-          payload
-        )
+        const r = await apiPost(`/bots/${botId}/commands`, payload)
         if (!r.ok)
           logAppend(
             `> FAILED create command ${payload.command}: ${JSON.stringify(
@@ -545,22 +541,16 @@ export default function MagicToolPage() {
 
       if (uploadAutoStart) {
         logAppend("Auto-start enabled. Sending launch command...")
-        await apiPost(
-          `${BASE_API}/bots/${botId}/status?api_key=${encodeURIComponent(apiKey)}`,
-          { status: "start_launch" }
-        )
+        await apiPost(`/bots/${botId}/status`, { status: "start_launch" })
         await new Promise((res) => setTimeout(res, 500))
         logAppend("Sending second launch command (for confirmation)...")
-        await apiPost(
-          `${BASE_API}/bots/${botId}/status?api_key=${encodeURIComponent(apiKey)}`,
-          { status: "start_launch" }
-        )
+        await apiPost(`/bots/${botId}/status`, { status: "start_launch" })
         logAppend("Bot launch initiated.")
       }
       logAppend("...........................")
       logAppend("Upload completed successfully!")
       toast({ title: "Upload completed" })
-      loadBots(apiKey)
+      loadBots()
       cancelUpload()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
