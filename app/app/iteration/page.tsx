@@ -5,7 +5,7 @@ import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
+import { CustomSwitch } from "@/components/custom-switch"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
@@ -270,12 +270,13 @@ export default function IterationPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <Switch
+                      <div className="flex items-center gap-1">
+                        <CustomSwitch
+                          id="ads-toggle"
+                          className="scale-65"
                           checked={iterations.have_ads}
                           onCheckedChange={handleToggleAds}
                           disabled={togglingAds || loading}
-                          className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
                         />
                         <span className="text-sm">
                           {togglingAds ? "Updating…" : "Ads"}

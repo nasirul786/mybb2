@@ -14,9 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { CustomSwitch } from "@/components/custom-switch"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
 import {
   Loader2,
@@ -30,6 +29,8 @@ import {
   Check,
 } from "lucide-react"
 import { MagicToolTerminal } from "@/components/magic-tool-terminal"
+import { AnimatedTabSwitcher, TabConfig } from "@/components/tab-switcher"
+import { StyledBotSelector } from "@/components/radio-button"
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false })
 
@@ -138,6 +139,12 @@ export default function MagicToolPage() {
   const [storeLibMap, setStoreLibMap] = useState<Record<string, string> | null>(
     null
   )
+  const [currentTab, setCurrentTab] = useState("download")
+
+  const tabConfigs: TabConfig[] = [
+    { value: "download", label: "Download Bot", icon: <Download className="w-4 h-4" /> },
+    { value: "upload", label: "Upload Bot", icon: <Upload className="w-4 h-4" /> },
+  ]
 
   useEffect(() => {
     const handleResize = () => {
@@ -575,23 +582,12 @@ export default function MagicToolPage() {
             create a new bot. All processing is done in your browser.
           </p>
 
-          <Tabs defaultValue="download" className="w-full">
-            <TabsList className="flex w-full">
-              <TabsTrigger
-                value="download"
-                className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground dark:data-[state=active]:bg-blue-600 dark:data-[state=active]:text-white"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download Bot
-              </TabsTrigger>
-              <TabsTrigger
-                value="upload"
-                className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground dark:data-[state=active]:bg-blue-600 dark:data-[state=active]:text-white"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Bot
-              </TabsTrigger>
-            </TabsList>
+          <Tabs value={currentTab} onValueChange={(value) => setCurrentTab(value || 'download')} className="w-full">
+            <AnimatedTabSwitcher
+              value={currentTab}
+              onValueChange={setCurrentTab}
+              tabs={tabConfigs}
+            />
 
             <TabsContent value="download" className="mt-4">
               <Card>
@@ -650,37 +646,14 @@ export default function MagicToolPage() {
                       </p>
                     </div>
                   ) : (
-                    <RadioGroup
-                      value={selectedBotId || ""}
-                      onValueChange={setSelectedBotId}
-                      className="max-h-96 overflow-y-auto space-y-2 pr-2"
-                    >
-                      {filteredBots.map((bot) => (
-                        <Label
-                          key={bot.id}
-                          htmlFor={`bot-radio-${bot.id}`}
-                          className="flex items-center gap-3 p-3 rounded-md border border-border cursor-pointer data-[state=checked]:border-primary data-[state=checked]:bg-muted/50"
-                          data-state={
-                            selectedBotId === bot.id ? "checked" : "unchecked"
-                          }
-                        >
-                          <RadioGroupItem
-                            value={bot.id}
-                            id={`bot-radio-${bot.id}`}
-                            className="border-2"
-                          />
-                          <div className="flex-1">
-                            <span className="font-medium">{bot.name}</span>
-                            <span className="text-muted-foreground text-xs ml-2 hidden sm:inline">
-                              (ID: {bot.id})
-                            </span>
-                          </div>
-                          {selectedBotId === bot.id && (
-                            <Check className="w-4 h-4 text-primary" />
-                          )}
-                        </Label>
-                      ))}
-                    </RadioGroup>
+                    <div className="max-h-96 overflow-y-auto pr-2">
+                      <StyledBotSelector
+                        bots={filteredBots}
+                        value={selectedBotId}
+                        onValueChange={setSelectedBotId}
+                        name="bot-selector"
+                      />
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -703,11 +676,11 @@ export default function MagicToolPage() {
                           Include the bot's API token in the JSON file.
                         </p>
                       </div>
-                      <Switch
+                      <CustomSwitch
                         id="include-token"
                         checked={includeToken}
                         onCheckedChange={setIncludeToken}
-                        className="data-[state=checked]:bg-primary"
+                        className="data-[state=checked]:bg-primary w-8 h-8 after:h-6 after:w-6"
                       />
                     </div>
                     <div className="flex items-center justify-between space-x-2">
@@ -722,11 +695,11 @@ export default function MagicToolPage() {
                           Start the download immediately when finished.
                         </p>
                       </div>
-                      <Switch
+                      <CustomSwitch
                         id="auto-download"
                         checked={autoDownload}
                         onCheckedChange={setAutoDownload}
-                        className="data-[state=checked]:bg-primary"
+                        className="data-[state=checked]:bg-primary w-8 h-8 after:h-6 after:w-6"
                       />
                     </div>
                     <Button onClick={exportBotFlow} className="w-full hover:transform-none">
@@ -823,11 +796,11 @@ export default function MagicToolPage() {
                           />
                         </div>
                         <div className="flex items-center space-x-2">
-                          <Switch
+                          <CustomSwitch
                             id="autoStartUpload"
                             checked={uploadAutoStart}
                             onCheckedChange={setUploadAutoStart}
-                            className="data-[state=checked]:bg-primary"
+                            className="data-[state=checked]:bg-primary w-8 h-8 after:h-6 after:w-6"
                           />
                           <Label htmlFor="autoStartUpload">
                             Auto-start bot after creation

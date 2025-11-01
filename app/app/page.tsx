@@ -13,7 +13,6 @@ import { AlertCircle, Loader2, Eye, EyeOff, Send, Mail, CheckCircle2 } from "luc
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false })
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// ---- ENV CONFIG ----
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://appapi.bots.business/v2"
 const API_KEY_STORAGE_KEY = process.env.NEXT_PUBLIC_API_KEY_STORAGE_KEY || "bb_api_key"
 const USER_STORAGE_KEY = `${API_KEY_STORAGE_KEY}_user`
@@ -23,7 +22,6 @@ const apiUrl = (path: string) => `${API_BASE}${path.startsWith("/") ? path : `/$
 
 
 async function apiFetchNoAuth(path: string, options: RequestInit = {}) {
-  // Version without API key for public endpoints like password reset
   const url = apiUrl(path)
   const res = await fetch(url, { cache: "no-store", ...options })
   if (!res.ok) {
@@ -106,7 +104,7 @@ function MobileWelcome({ mode }: { mode: "login" | "new" | "apikey" | "forgot" }
 function AuthPageContent() {
   useThemeBoot()
   const navigate = (path: string) => { window.location.href = path }
-  const [mode, setMode] = useState<"login" | "new" | "apikey" | "forgot">("login") // Added 'forgot' mode
+  const [mode, setMode] = useState<"login" | "new" | "apikey" | "forgot">("login")
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const modeParam = params.get("mode")
@@ -125,7 +123,7 @@ function AuthPageContent() {
   const [tgLoading, setTgLoading] = useState(false)
   const [tgError, setTgError] = useState("")
   const [tgLink, setTgLink] = useState("")
-  const [resetSuccess, setResetSuccess] = useState("") // State for password reset success message
+  const [resetSuccess, setResetSuccess] = useState("")
 
   useEffect(() => {
     const storedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY)
@@ -157,11 +155,24 @@ function AuthPageContent() {
     if (!email || !password) { setError("Please enter both email and password."); return }
     setLoading(true)
     setError("")
-    setResetSuccess("") // Clear success message on new attempt
+    setResetSuccess("")
     try {
       const response = await fetch(apiUrl("/auth/sign_in"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
-      const data = await response.json()
-      if (!response.ok || data.errors) throw new Error(data.errors?.join(", ") || "Invalid login credentials.")
+
+      if (response.status === 401) {
+        throw new Error("Invalid login credentials.")
+      }
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.errors?.join(", ") || `Login failed. Status: ${response.status}`)
+      }
+
+      if (data?.errors) {
+        throw new Error(data.errors.join(", "))
+      }
+
       await getApiKeyAndLogin(response.headers)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sign in.")
@@ -217,10 +228,10 @@ function AuthPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       })
-      const data = await res.json().catch(() => ({})); // API returns simple {result: ok} or error
+      const data = await res.json().catch(() => ({}));
       if (data?.result === "ok") {
         setResetSuccess("New password has been sent to your email address, please check and use it to log in.")
-        setEmail("") // Clear email field on success
+        setEmail("")
       } else {
          throw new Error("Failed to send reset email. Please check the email address or try again later.")
       }
@@ -436,7 +447,7 @@ function AuthPageContent() {
             {mode === "login" && renderLoginForm()}
             {mode === "new" && renderRegisterForm()}
             {mode === "apikey" && renderApiKeyForm()}
-            {mode === "forgot" && renderForgotForm()} {/* Render forgot password form */}
+            {mode === "forgot" && renderForgotForm()}
           </Card>
         </div>
       </div>
