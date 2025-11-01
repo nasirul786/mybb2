@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Ubuntu } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { NetworkStatus } from "@/components/NetworkStatus"
 
 const ubuntu = Ubuntu({
   subsets: ["latin"],
@@ -21,7 +22,6 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    // Important: silence hydration diff (the theme class will be added/changed by the client)
     <html lang="en" suppressHydrationWarning>
       <body className={`${ubuntu.variable} font-ubuntu antialiased`}>
         <ThemeProvider
@@ -33,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           {children}
         </ThemeProvider>
+        <NetworkStatus />
       </body>
     </html>
   )
