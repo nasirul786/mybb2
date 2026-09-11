@@ -1,3 +1,6 @@
+>[!IMPORTANT]
+>May not work due to changes to the api and cors restriction, 
+
 # MyBB - Bots.Business
 Bots business web app built using modern framework.
 
